@@ -144,6 +144,30 @@ def variants_page() -> str:
     return (cvweb.WEB_DIR / "variants.html").read_text(encoding="utf-8")
 
 
+@app.get("/cv/web/docs")
+def docs_page() -> str:
+    """Serve README.md as a plain readable page — the "how to use" link."""
+    from markupsafe import escape
+
+    readme = (cvweb.REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    return (
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<title>CV Builder — How to use</title>"
+        "<link rel=\"stylesheet\" href=\"/cv/web/builder.css\"></head>"
+        "<body class=\"builder\">"
+        "<header class=\"builder-header\"><div><h1>How to use</h1>"
+        "<p class=\"subtitle\">README.md</p></div>"
+        "<nav class=\"builder-nav\">"
+        "<a href=\"/cv/web/edit\">Editor</a>"
+        "<a href=\"/cv/web/build\">Builder</a>"
+        "<a href=\"/cv/web/variants\">Variants</a>"
+        "</nav></header>"
+        "<pre style=\"white-space:pre-wrap;max-width:860px;margin:0 auto;"
+        f"padding:1.5rem 1rem 3rem;line-height:1.5;\">{escape(readme)}</pre>"
+        "</body></html>"
+    )
+
+
 def _history() -> cvweb.EditHistory:
     """Return the edit-history store for the active data.yaml."""
     return cvweb.edit_history()

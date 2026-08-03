@@ -1364,7 +1364,8 @@
     const links = document.createElement("span");
     links.className = "editor-links";
     links.innerHTML =
-      '<a href="/cv/web/build">Builder</a> · <a href="/cv/web/variants">Variants</a>';
+      '<a href="/cv/web/build">Builder</a> · <a href="/cv/web/variants">Variants</a> · ' +
+      '<a href="/cv/web/docs">How to use</a>';
     toolbar.appendChild(links);
   }
 
