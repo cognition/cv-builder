@@ -1,0 +1,41 @@
+person:
+  name: Jordan Rivers
+  tagline: "Example Title | Example Specialty | Example Focus"
+  quote: "This is placeholder text — replace it with your own tagline or motto."
+  photo: "../../assets/images/placeholder-headshot.png"
+  email: jordan.rivers@example.com
+  mobile: "555-0100"
+  github: {handle: example-handle, url: "https://github.com/example-handle"}
+  linkedin: {handle: example-handle, url: "https://www.linkedin.com/in/example-handle"}
+  strengths: ["Example Strength One", "Example Strength Two", "Example Strength Three"]
+
+skills:
+  technical:
+    - Example Technical Skill A
+    - Example Technical Skill B
+    - Example Technical Skill C
+  functional:
+    - Example Functional Skill A
+    - Example Functional Skill B
+
+bio:
+  - >-
+    This is a placeholder bio paragraph. Replace it with a short summary of
+    your background, focus areas, and what you bring to a role.
+
+experience:
+  - company: Example Company
+    role: Example Job Title
+    dates: "2022 – Present"
+    location: Example City
+    subsections:
+      - heading: Example Project Area
+        bullets:
+          - Example accomplishment bullet describing scope and impact.
+          - Another example bullet — replace with real, specific results.
+          - A third example bullet showing the expected level of detail.
+
+education:
+  - "Example Degree — Example University (2016 – 2020)"
+
+panels: []

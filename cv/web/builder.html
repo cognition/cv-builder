@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Custom CV Builder</title>
+<link rel="stylesheet" href="/cv/web/builder.css">
+</head>
+<body class="builder">
+  <header class="builder-header">
+    <div>
+      <h1>Custom CV Builder</h1>
+      <p class="subtitle">
+        Pull snippets at brief / standard / detailed levels, assemble a draft,
+        then save a named variant under <code>cv/variants/</code>.
+      </p>
+    </div>
+    <nav class="builder-nav">
+      <a href="/cv/web/edit">Editor</a>
+      <a href="/cv/web/variants">Variants</a>
+      <button type="button" id="btn-reseed">Re-seed DB</button>
+    </nav>
+  </header>
+
+  <section class="builder-controls">
+    <label>
+      Variant / draft name
+      <input id="variant-name" type="text" placeholder="e.g. ircc-it04" value="">
+    </label>
+    <label>
+      Saved drafts
+      <select id="draft-select">
+        <option value="">— select —</option>
+      </select>
+    </label>
+    <button type="button" id="btn-draft-load">Load</button>
+    <button type="button" id="btn-draft-save">Save draft</button>
+    <button type="button" id="btn-draft-delete">Delete draft</button>
+    <label>
+      Category
+      <select id="filter-category">
+        <option value="">All</option>
+        <option value="bio">Bio</option>
+        <option value="skill">Skill</option>
+        <option value="experience">Experience</option>
+        <option value="part">Part</option>
+        <option value="requirement">Requirement</option>
+      </select>
+    </label>
+    <label>
+      Search
+      <input id="filter-search" type="search" placeholder="company, heading, text…">
+    </label>
+    <label>
+      Default detail level
+      <select id="default-level">
+        <option value="brief">Brief</option>
+        <option value="standard" selected>Standard</option>
+        <option value="detailed">Detailed</option>
+      </select>
+    </label>
+    <button type="button" id="btn-compose">Save &amp; Preview PDF</button>
+    <span id="builder-status">Ready.</span>
+  </section>
+
+  <details class="tailor-panel" id="tailor-panel">
+    <summary>Tailor to posting</summary>
+    <div class="tailor-body">
+      <textarea id="posting-text" rows="6" placeholder="Paste a job posting or requirements here…"></textarea>
+      <div class="tailor-actions">
+        <label>
+          Top N
+          <input id="match-limit" type="number" min="1" max="100" value="15">
+        </label>
+        <button type="button" id="btn-match">Suggest snippets</button>
+        <button type="button" id="btn-add-top">Add top N to draft</button>
+        <button type="button" id="btn-clear-match">Clear ranking</button>
+      </div>
+      <p class="hint" id="match-summary"></p>
+    </div>
+  </details>
+
+  <main class="builder-layout">
+    <aside class="library-pane">
+      <div class="pane-heading">
+        <h2>Snippet library</h2>
+        <button type="button" id="btn-new-snippet">New snippet</button>
+      </div>
+      <div id="snippet-form" class="snippet-form hidden"></div>
+      <div id="snippet-list" class="snippet-list"></div>
+    </aside>
+    <section class="draft-pane">
+      <h2>Draft CV</h2>
+      <p class="hint">Selected snippets appear here. Use ↑ / ↓ to reorder, × to remove. Drafts autosave locally.</p>
+      <ol id="draft-list" class="draft-list"></ol>
+    </section>
+  </main>
+
+  <div id="preview-pane">
+    <iframe id="preview-frame" src="about:blank" title="PDF preview"></iframe>
+  </div>
+
+  <script src="/cv/web/builder.js"></script>
+</body>
+</html>

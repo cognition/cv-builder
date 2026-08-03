@@ -1,0 +1,19 @@
+services:
+  cv-editor:
+    build: .
+    ports:
+      - "127.0.0.1:5057:5057"
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - .:/app
+    environment:
+      EDITOR_HOST: "0.0.0.0"
+      EDITOR_PORT: "5057"
+      MCP_TRANSPORT: "streamable-http"
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8765"
+      PYTHONPATH: "/app/src:/app/scripts"
+      CHROME_BIN: "/usr/bin/chromium"
+    # Bind-mount keeps data.yaml, generated PDFs, and snippets.db on the host.
+    # Both ports publish to 127.0.0.1 only — same reasoning as the editor:
+    # fine for local personal use, don't widen without adding auth first.

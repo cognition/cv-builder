@@ -1,0 +1,779 @@
+/* Content pages get real top/bottom margins so Chrome never prints into
+   them; horizontal spacing stays in .content padding. */
+@page {
+  size: Letter;
+  margin: 0.5in 0;
+}
+
+/* The hero page bleeds edge-to-edge for the navy sidebar. */
+@page bleed {
+  size: Letter;
+  margin: 0;
+}
+
+:root {
+  --navy: #1f3864;
+  --steel: #2e5984;
+  --slate: #44546a;
+  --ink: #222831;
+  --muted: #5b6472;
+  --hairline: #d8dce2;
+  --content-pad: 0.65in;
+  --sidebar-width: 2.5in;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  font-size: 10.3pt;
+  line-height: 1.45;
+}
+
+/* ---------- hero (full first page: sidebar + profile column) ---------- */
+
+.hero {
+  display: flex;
+  align-items: stretch;
+  min-height: 10.98in;
+  break-after: page;
+  page: bleed;
+}
+
+.sidebar {
+  flex: 0 0 var(--sidebar-width);
+  width: var(--sidebar-width);
+  background: var(--navy);
+  color: #fff;
+  padding: 0.3in 0.26in;
+}
+
+.photo {
+  width: 1in;
+  height: 1in;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  margin: 0 auto 0.1in;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+}
+
+.sidebar h1 {
+  font-size: 15pt;
+  text-align: center;
+  margin: 0 0 0.04in;
+  letter-spacing: 0.02em;
+}
+
+.tagline {
+  text-align: center;
+  font-size: 8.8pt;
+  font-style: italic;
+  color: #cdd7e8;
+  margin: 0 0 0.08in;
+}
+
+.quote {
+  text-align: center;
+  font-size: 7.2pt;
+  font-style: italic;
+  color: #9fb1cc;
+  margin: 0 0 0.1in;
+}
+
+.skills-block h2 {
+  font-size: 8.8pt;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #cdd7e8;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  padding-bottom: 0.03in;
+  margin: 0.12in 0 0.06in;
+}
+
+.skills-block ul {
+  margin: 0;
+  padding-left: 0.16in;
+  font-size: 8pt;
+  line-height: 1.35;
+}
+
+.skills-block li { margin-bottom: 0.018in; }
+
+.contact {
+  margin-top: 0.05in;
+  padding-top: 0.06in;
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 8pt;
+}
+
+.contact p {
+  margin: 0.035in 0;
+  display: flex;
+  align-items: center;
+  gap: 0.07in;
+  word-break: break-word;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.2in;
+  height: 0.2in;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  font-size: 6.2pt;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.strengths {
+  margin-top: 0.12in;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.07in 0.05in;
+}
+
+.strengths span {
+  font-size: 7.2pt;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: 0.02in;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.45);
+}
+
+.intro {
+  flex: 1 1 auto;
+  padding: 0.45in var(--content-pad);
+  display: flex;
+  flex-direction: column;
+  gap: 0.22in;
+}
+
+.col-title {
+  color: var(--navy);
+  font-size: 13pt;
+  border-bottom: 2px solid var(--hairline);
+  padding-bottom: 0.05in;
+  margin: 0 0 0.12in;
+}
+
+.intro p { margin: 0 0 0.1in; }
+
+.snapshot-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+  table-layout: fixed;
+}
+
+.snapshot-table td {
+  padding: 0.05in 0.08in 0.05in 0;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+}
+
+.snap-company {
+  font-weight: 700;
+  color: var(--steel);
+  width: 32%;
+}
+
+.snap-role {
+  color: var(--ink);
+  width: 44%;
+}
+
+.snap-dates {
+  color: var(--muted);
+  text-align: right;
+  width: 24%;
+  padding-right: 0;
+}
+
+.education ul {
+  margin: 0;
+  padding-left: 0.2in;
+}
+
+.education li { margin-bottom: 0.05in; }
+
+/* ---------- flowing content (experience, pages 2+) ---------- */
+
+.content {
+  padding: 0.5in var(--content-pad);
+}
+
+.section-title {
+  color: var(--navy);
+  font-size: 14pt;
+  border-bottom: 2px solid var(--hairline);
+  padding-bottom: 0.06in;
+  margin: 0 0 0.2in;
+  break-after: avoid;
+}
+
+.job { margin-bottom: 0.26in; }
+
+.job + .job {
+  border-top: 1px solid var(--hairline);
+  padding-top: 0.2in;
+}
+
+.job-title {
+  color: var(--navy);
+  font-size: 12.5pt;
+  margin: 0 0 0.02in;
+  break-after: avoid;
+}
+
+.role {
+  color: var(--muted);
+  font-size: 9.3pt;
+  font-style: italic;
+  margin: 0 0 0.15in;
+  break-after: avoid;
+}
+
+.intro-text {
+  margin: 0 0 0.15in;
+}
+
+.subsection {
+  break-inside: avoid;
+  margin-bottom: 0.18in;
+}
+
+.sub-title {
+  color: var(--steel);
+  font-size: 10.3pt;
+  margin: 0 0 0.06in;
+  break-after: avoid;
+}
+
+.subsection p { margin: 0 0 0.08in; }
+
+/* Keep individual blocks whole: a paragraph or bullet either fits on the
+   page or moves to the next one — it never straddles a margin. */
+.content p,
+.content li,
+.job-title,
+.role {
+  break-inside: avoid;
+}
+
+.subsection ul {
+  margin: 0;
+  padding-left: 0.2in;
+}
+
+.subsection li { margin-bottom: 0.04in; }
+
+/* ---------- editor-only affordances (no effect on the printed PDF) ---------- */
+
+body.edit-mode [contenteditable="true"] {
+  border-radius: 2px;
+  outline: 1px dashed transparent;
+  transition: outline-color 0.1s, background-color 0.1s;
+}
+
+body.edit-mode [contenteditable="true"]:hover {
+  outline-color: rgba(46, 89, 132, 0.4);
+}
+
+body.edit-mode [contenteditable="true"]:focus {
+  outline: 1px dashed var(--steel);
+  background-color: rgba(46, 89, 132, 0.06);
+}
+
+body.edit-mode {
+  padding-bottom: 3.5in;
+  position: relative;
+  background: #4a4e55;
+}
+
+/* Render the document as a Letter-width sheet so pagination is visible. */
+body.edit-mode .hero,
+body.edit-mode .content {
+  width: 8.5in;
+  margin-left: auto;
+  margin-right: auto;
+  background: #fff;
+}
+
+body.edit-mode .hero {
+  box-shadow: 0 0 14px rgba(0, 0, 0, 0.4);
+}
+
+body.edit-mode .content {
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+
+#editor-toolbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #1c1f24;
+  color: #fff;
+  padding: 0.15in 0.3in;
+  display: flex;
+  align-items: center;
+  gap: 0.2in;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 9.5pt;
+  z-index: 1000;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#editor-toolbar button {
+  font: inherit;
+  padding: 0.08in 0.2in;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--steel);
+  color: #fff;
+}
+
+#editor-toolbar button:hover { background: var(--navy); }
+#editor-toolbar button:disabled { opacity: 0.5; cursor: default; }
+
+#editor-status { flex: 1 1 auto; opacity: 0.85; }
+
+#preview-pane {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0.6in;
+  width: 42vw;
+  border-left: 4px solid #1c1f24;
+  background: #525659;
+  display: none;
+}
+
+#preview-pane.open { display: block; }
+
+#preview-pane iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+body.edit-mode.preview-open .hero,
+body.edit-mode.preview-open .content {
+  margin-left: max(0.15in, calc((58vw - 8.5in) / 2));
+  margin-right: auto;
+}
+
+/* ---------- page boundary and margin guides (screen only) ---------- */
+
+#page-guides {
+  position: absolute;
+  top: 0;
+  pointer-events: none;
+  z-index: 900;
+}
+
+#page-guides .page-boundary {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px dashed rgba(224, 82, 82, 0.85);
+}
+
+#page-guides .page-boundary .pb-label {
+  position: absolute;
+  right: -0.02in;
+  top: 3px;
+  transform: translateX(100%);
+  background: rgba(224, 82, 82, 0.9);
+  color: #fff;
+  font-size: 7.6pt;
+  padding: 2px 7px;
+  border-radius: 0 4px 4px 0;
+  white-space: nowrap;
+}
+
+#page-guides .page-margin-box {
+  position: absolute;
+  border: 1px dashed rgba(46, 89, 132, 0.4);
+}
+
+#page-guides .page-cut {
+  position: absolute;
+  left: -10px;
+  right: -10px;
+  height: 24px;
+  background: #4a4e55;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.45);
+}
+
+#page-guides .page-cut .pb-label {
+  position: absolute;
+  right: -0.02in;
+  top: 26px;
+  transform: translateX(100%);
+  background: rgba(224, 82, 82, 0.9);
+  color: #fff;
+  font-size: 7.6pt;
+  padding: 2px 7px;
+  border-radius: 0 4px 4px 0;
+  white-space: nowrap;
+}
+
+body.edit-mode.guides-off #page-guides {
+  display: none;
+}
+
+/* Applied briefly while measuring print heights: hides editor-only chrome
+   so page estimates are not inflated by controls that never print. */
+body.guides-measuring .struct-controls,
+body.guides-measuring .struct-add-section,
+body.guides-measuring .panel-toolbar {
+  display: none !important;
+}
+
+/* ---------- structural editing controls (screen only) ---------- */
+
+body.edit-mode .struct-controls {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 4px;
+  vertical-align: middle;
+  opacity: 0.15;
+  transition: opacity 0.12s;
+}
+
+body.edit-mode li:hover > .struct-controls,
+body.edit-mode li:hover + .struct-controls,
+body.edit-mode p:hover + .struct-controls,
+body.edit-mode h2:hover + .struct-controls,
+body.edit-mode h3:hover + .struct-controls,
+body.edit-mode h4:hover + .struct-controls,
+body.edit-mode span:hover + .struct-controls,
+/* Whole-job and whole-subsection controls sit at the front of their block
+   (a subsection may have no heading to anchor a trailing-sibling hover to),
+   so reveal them on hover anywhere in the block, not just the leading edge. */
+body.edit-mode .job:hover > .struct-controls,
+body.edit-mode .subsection:hover > .struct-controls,
+body.edit-mode .struct-controls:hover {
+  opacity: 1;
+}
+
+body.edit-mode .struct-btn,
+body.edit-mode .struct-add-section {
+  font: inherit;
+  font-size: 8.5pt;
+  line-height: 1;
+  padding: 2px 5px;
+  border: 1px solid rgba(31, 56, 100, 0.35);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--navy);
+  cursor: pointer;
+}
+
+/* Side-panel tooling stays readable on the navy sidebar. */
+body.edit-mode .side-panel .panel-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 0 0 0.06in;
+  opacity: 1;
+}
+
+body.edit-mode .side-panel .panel-toolbar .struct-btn,
+body.edit-mode .sidebar .struct-add-section,
+body.edit-mode .side-panel .struct-add-section {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.55);
+  color: var(--navy);
+  opacity: 1;
+}
+
+body.edit-mode .sidebar .struct-controls {
+  opacity: 0.55;
+}
+
+body.edit-mode .sidebar li:hover + .struct-controls,
+body.edit-mode .sidebar .struct-controls:hover {
+  opacity: 1;
+}
+
+body.edit-mode .struct-add-section {
+  display: inline-block;
+  margin: 0.08in 0.05in 0.12in;
+  opacity: 0.55;
+}
+
+body.edit-mode .struct-add-section:hover,
+body.edit-mode .struct-btn:hover {
+  opacity: 1;
+  background: #e8eef7;
+}
+
+#editor-toolbar .editor-links {
+  margin-left: auto;
+  opacity: 0.9;
+}
+
+#editor-toolbar .editor-links a {
+  color: #cde;
+  text-decoration: none;
+}
+
+#editor-toolbar .editor-links a:hover {
+  text-decoration: underline;
+}
+
+/* ---------- image picker (screen only) ---------- */
+
+body.edit-mode .photo-editable {
+  cursor: pointer;
+}
+
+body.edit-mode .photo-editable:hover {
+  outline: 2px dashed rgba(255, 255, 255, 0.6);
+  outline-offset: 3px;
+}
+
+/* Freeze the page underneath while any picker overlay is open, so a wheel
+   scroll that runs past the top/bottom of the picker's own scroll area
+   doesn't chain through to the page behind it. */
+body.overlay-open {
+  overflow: hidden;
+}
+
+.picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 24, 32, 0.55);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 10pt;
+  overscroll-behavior: contain;
+}
+
+.picker-overlay .picker-search {
+  width: 100%;
+  font: inherit;
+  padding: 0.06in 0.1in;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  margin-bottom: 0.12in;
+}
+
+.picker-overlay .picker-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.06in;
+  max-height: 4.2in;
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin-bottom: 0.15in;
+}
+
+.picker-overlay .picker-row {
+  font: inherit;
+  text-align: left;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  background: #fff;
+  padding: 0.07in 0.1in;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.picker-overlay .picker-row:hover {
+  border-color: var(--steel);
+  background: #f0f4fa;
+}
+
+.picker-overlay .picker-row .row-kind {
+  display: inline-block;
+  font-size: 7.4pt;
+  color: var(--steel);
+  background: #e8eef7;
+  border-radius: 999px;
+  padding: 0.01in 0.07in;
+  margin-right: 0.07in;
+  vertical-align: middle;
+}
+
+.picker-overlay .picker-row.already-added {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.picker-overlay .picker-row.already-added:hover {
+  border-color: var(--hairline);
+  background: #fff;
+}
+
+.picker-overlay .picker-panel {
+  background: #fff;
+  color: var(--ink);
+  border-radius: 8px;
+  width: min(7.5in, 92vw);
+  max-height: 86vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.25in;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.picker-overlay .picker-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.08in;
+}
+
+.picker-overlay .picker-close {
+  font: inherit;
+  font-size: 13pt;
+  line-height: 1;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.picker-overlay .picker-hint {
+  margin: 0 0 0.15in;
+  color: var(--muted);
+  font-size: 8.8pt;
+}
+
+.picker-overlay .picker-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(1.4in, 1fr));
+  gap: 0.12in;
+  margin-bottom: 0.18in;
+}
+
+.picker-overlay .picker-tile {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: #fff;
+  padding: 0.08in;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.05in;
+  align-items: center;
+}
+
+.picker-overlay .picker-tile:hover {
+  border-color: var(--steel);
+  background: #f0f4fa;
+}
+
+.picker-overlay .picker-tile img {
+  width: 100%;
+  height: 1.1in;
+  object-fit: contain;
+}
+
+.picker-overlay .picker-tile span {
+  font-size: 7.6pt;
+  color: var(--muted);
+  word-break: break-all;
+  text-align: center;
+}
+
+.picker-overlay .level-chips {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.picker-overlay .level-chip {
+  font-size: 7.6pt;
+  line-height: 1.4;
+  border: 1px solid var(--steel);
+  color: var(--steel);
+  border-radius: 8px;
+  padding: 0 7px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.picker-overlay .level-chip:hover {
+  background: var(--steel);
+  color: #fff;
+}
+
+.picker-overlay .picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1in;
+  align-items: center;
+}
+
+.picker-overlay .picker-upload {
+  display: inline-block;
+  padding: 0.06in 0.14in;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  background: var(--navy);
+  color: #fff;
+  cursor: pointer;
+}
+
+.picker-overlay .picker-url {
+  flex: 1 1 2.5in;
+  font: inherit;
+  padding: 0.06in 0.1in;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+}
+
+.picker-overlay .picker-grab {
+  font: inherit;
+  padding: 0.06in 0.14in;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  background: var(--steel);
+  color: #fff;
+  cursor: pointer;
+}
+
+.picker-overlay .picker-status,
+.picker-overlay .picker-empty {
+  margin: 0.1in 0 0;
+  color: var(--muted);
+  font-size: 8.8pt;
+}
+
+@media print {
+  /* @page margins replace the screen-only vertical padding. */
+  .content {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  /* Simulated-pagination pushes are screen-only. */
+  [data-page-push] {
+    margin-top: 0 !important;
+  }
+
+  .struct-controls,
+  .struct-add-section,
+  .panel-toolbar,
+  #editor-toolbar,
+  #preview-pane,
+  #page-guides,
+  .picker-overlay {
+    display: none !important;
+  }
+}

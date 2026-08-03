@@ -1,0 +1,29 @@
+# Swap files
+*~
+~*
+*swp
+*.kate*
+*lock*
+.~lock.*
+
+# From Tools, etc.
+*.orig
+
+# IDE
+*.code-workspace
+.vscode/
+
+# SQLite snippet database (regenerate with scripts/seed-snippets.py)
+data/*.db
+data/*.db-journal
+data/edit-history.json
+
+# Generated CV output (regenerate with generate-cv-web.py / the builder UI)
+cv/current/*.pdf
+cv/variants/*/
+
+# Rendered editor scratch / Python caches
+cv/web/_rendered.html
+__pycache__/
+*.py[cod]
+.pytest_cache/
