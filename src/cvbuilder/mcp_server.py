@@ -38,7 +38,8 @@ mcp = FastMCP(
     name="cv-builder",
     instructions=(
         "Tools for tailoring a CV. Snippets are reusable CV "
-        "content units (category: bio/skill/experience/education/part, "
+        "content units (category: bio/skill/experience/education/part/"
+        "requirement, "
         "each with brief/standard/detailed variants). Typical flow: "
         "match_job_posting with the posting text to find relevant "
         "snippets, list/inspect/create snippets to fill gaps, then "
@@ -87,7 +88,7 @@ def list_snippets(
 
     Args:
         category: Exact category match (e.g. "bio", "skill", "experience",
-            "education", "part").
+            "education", "part", "requirement").
         tag: Require this tag (case-insensitive).
         detail_level: Only include snippets that have this variant
             ("brief", "standard", or "detailed").

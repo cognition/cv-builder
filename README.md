@@ -16,7 +16,16 @@ Nothing in this repo is anyone's real personal data.
   `style.css`) and the browser UI (`editor.js`, `builder.js`, `variants.js`
   + their `.html`/`.css`)
 - `content/` — optional additional detail for the snippet library, as
-  markdown (`work-experience/`, `parts/`) alongside `data.yaml`
+  markdown alongside `data.yaml`:
+  - `work-experience/` — one file per employer (`category: experience`,
+    company taken from the filename)
+  - `parts/` — reusable blocks not tied to an employer, e.g. an alternate
+    bio or a longer "detailed" variant of a strength (`category: part`)
+  - `requirements/` — pre-written answers to recurring posting
+    requirements, for `match_job_posting`/the builder's posting-matcher
+    to surface (`category: requirement`)
+  - See the example files under each for the heading convention: only
+    the *last* heading before a block of prose becomes a snippet
 - `src/cvbuilder/` — snippet library (SQLite), importer, matcher, composer,
   and the MCP server
 - `scripts/` — CLI entry points (see below)
