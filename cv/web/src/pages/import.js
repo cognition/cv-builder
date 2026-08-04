@@ -35,6 +35,17 @@
     stepReview.classList.toggle("active", name === "review");
   }
 
+  function resetImportMode() {
+    document.querySelectorAll('input[name="import-mode"]').forEach((input) => {
+      const isLibrary = input.value === "library";
+      input.checked = isLibrary;
+      const choice = input.closest(".import-choice");
+      if (choice) {
+        choice.classList.toggle("selected", isLibrary);
+      }
+    });
+  }
+
   // ---------- stage 1: upload ----------
 
   chooseBtn.addEventListener("click", () => fileInput.click());
@@ -165,6 +176,7 @@
       fetch(`/api/imports/staging/${state.token}`, { method: "DELETE" }).catch(() => {});
     }
     state = null;
+    resetImportMode();
     setStage("file");
   }
 
@@ -210,6 +222,7 @@
         showToast(`${body.snippet_count} ${noun} added to your library.`);
       }
       state = null;
+      resetImportMode();
       setStage("file");
       await loadHistory();
     } catch (err) {
