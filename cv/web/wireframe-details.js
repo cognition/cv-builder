@@ -8,4 +8,5 @@ document.addEventListener("DOMContentLoaded",()=>{
   function wireRemove(button){button.addEventListener("click",()=>button.closest(".profile-row").remove())}document.querySelectorAll(".remove-profile").forEach(wireRemove);
   document.querySelector("#add-profile").addEventListener("click",()=>{const row=document.createElement("div");row.className="profile-row";row.innerHTML='<span class="profile-logo website">⌾</span><select><option>Website</option><option>LinkedIn</option><option>GitHub</option><option>GitLab</option><option>Medium</option><option>Instagram</option></select><input class="social-url" placeholder="Profile URL or username"><label class="show-toggle"><input type="checkbox" checked><i></i></label><button class="remove-profile">×</button>';list.appendChild(row);wireRemove(row.querySelector(".remove-profile"));row.querySelector("input.social-url").focus()});
   document.querySelector("#save-details").addEventListener("click",()=>toast("Personal details saved (prototype only)"));
+  if(new URLSearchParams(window.location.search).get("view")==="personal-details")nav.click();
 });
