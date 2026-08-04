@@ -144,6 +144,12 @@ def variants_page() -> str:
     return (cvweb.WEB_DIR / "variants.html").read_text(encoding="utf-8")
 
 
+@app.get("/cv/web/wireframe")
+def wireframe_page() -> str:
+    """Serve the standalone, sample-data-only product wireframe."""
+    return (cvweb.WEB_DIR / "wireframe.html").read_text(encoding="utf-8")
+
+
 @app.get("/cv/web/docs")
 def docs_page() -> str:
     """Serve README.md as a plain readable page — the "how to use" link."""
