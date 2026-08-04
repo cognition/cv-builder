@@ -621,6 +621,17 @@
         subEl.appendChild(button);
       });
     });
+
+    // Contact profiles: only each row's handle carries a data-path, so
+    // (like the job/panel strips above) attach the whole-item +/↑/↓/×
+    // controls explicitly rather than relying on the generic per-item pass.
+    document.querySelectorAll(".contact [data-path]").forEach((node) => {
+      const path = node.getAttribute("data-path") || "";
+      const match = path.match(/^person\.profiles\[(\d+)\]\.handle$/);
+      if (!match) return;
+      node.insertAdjacentElement("afterend", makeItemControls(`person.profiles[${match[1]}]`));
+    });
+    addSectionButton(document.querySelector(".contact"), "person.profiles", "+ profile");
   }
 
   /**

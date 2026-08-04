@@ -135,3 +135,9 @@ class TestDefaultInsertValueContent:
 
     def test_explicit_value_bypasses_defaults(self) -> None:
         assert cvweb._default_insert_value("bio", "explicit") == "explicit"
+
+    def test_person_profiles_defaults_to_profile_shape(self) -> None:
+        profile = cvweb._default_insert_value("person.profiles", None)
+        assert profile["provider"] == new_item_content.PROFILE["provider"]
+        assert profile["handle"] == new_item_content.PROFILE["handle"]
+        assert profile["visible"] is True

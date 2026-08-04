@@ -1,0 +1,78 @@
+{% extends "shell/base.html" %}
+{% block title %}CV Studio — Personal details{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/cv/web/src/pages/details.css">{% endblock %}
+{% block header_actions %}<button type="button" class="primary" id="save-details">Save details</button>{% endblock %}
+{% block content %}
+<div class="view active">
+  <div class="heading">
+    <div>
+      <h2>Personal details</h2>
+      <p>Manage the contact information and profiles used on your CV.</p>
+    </div>
+    <span id="details-status" class="hint"></span>
+  </div>
+
+  <div class="details-layout">
+    <div class="details-form">
+      <section>
+        <div class="details-section-head">
+          <div><h3>Identity</h3><p>The name and headline shown at the top of your CV.</p></div>
+          <a class="photo-button" href="/cv/web/assets"><span id="photo-thumb"></span><b>Change photo</b></a>
+        </div>
+        <div class="field-grid">
+          <label>First name<input id="first-name" class="preview-field" data-preview="first"></label>
+          <label>Last name<input id="last-name" class="preview-field" data-preview="last"></label>
+          <label class="wide">Professional headline<input id="headline" class="preview-field" data-preview="headline"></label>
+        </div>
+      </section>
+
+      <section>
+        <div class="details-section-head">
+          <div><h3>Contact information</h3><p>Shown on your CV and in the Tailor preview.</p></div>
+        </div>
+        <div class="field-grid">
+          <label>Email address<input id="email" class="preview-field" data-preview="email" type="email"></label>
+          <label>Phone number<input id="phone" class="preview-field" data-preview="phone" type="tel"></label>
+          <label>City<input id="city" class="preview-field"></label>
+          <label>Province / state<input id="region" class="preview-field"></label>
+          <label>Country<input id="country" class="preview-field"></label>
+          <label>Postal code <small>Optional</small><input id="postal-code"></label>
+          <label class="wide">Street address <small>Optional — usually omitted from modern CVs</small><input id="street"></label>
+        </div>
+        <div class="privacy-row">
+          <span>Address display on CV</span>
+          <label><input type="radio" name="address-display" value="city"> City and country only</label>
+          <label><input type="radio" name="address-display" value="full"> Full address</label>
+          <label><input type="radio" name="address-display" value="hide"> Hide location</label>
+        </div>
+      </section>
+
+      <section>
+        <div class="details-section-head">
+          <div><h3>Websites and social profiles</h3><p>Add as many profiles as you need and choose which ones appear on your CV.</p></div>
+          <button type="button" id="add-profile">+ Add profile</button>
+        </div>
+        <div class="profile-list" id="profile-list"></div>
+        <div class="profile-labels"><span>Profile</span><span>URL or username</span><span>Show on CV</span></div>
+      </section>
+    </div>
+
+    <aside class="details-preview">
+      <small>LIVE PREVIEW</small>
+      <div class="contact-preview">
+        <span class="preview-photo" id="preview-photo"></span>
+        <h2><i id="preview-first"></i> <i id="preview-last"></i></h2>
+        <h3 id="preview-headline"></h3>
+        <div class="preview-contact">
+          <p>&#9993; <span id="preview-email"></span></p>
+          <p>&#9742; <span id="preview-phone"></span></p>
+          <p id="preview-location-row">&#8962; <span id="preview-location"></span></p>
+        </div>
+        <div class="preview-socials" id="preview-socials"></div>
+      </div>
+      <p class="preview-hint">This is what appears at the top of your master CV.</p>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+{% block extra_body %}<script src="/cv/web/src/pages/details.js"></script>{% endblock %}

@@ -375,6 +375,10 @@ def _default_insert_value(list_path: str, value: Any) -> Any:
         panel.update(new_item_content.PANEL)
         panel["items"] = CommentedSeq([new_item_content.GENERIC_ITEM])
         return panel
+    if list_path == "person.profiles":
+        profile = CommentedMap()
+        profile.update(new_item_content.PROFILE)
+        return profile
     return new_item_content.GENERIC_ITEM
 
 

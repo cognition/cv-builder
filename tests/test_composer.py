@@ -74,7 +74,8 @@ class TestCvComposer:
         yaml = YAML(typ="safe")
         with data_path.open(encoding="utf-8") as handle:
             document = yaml.load(handle)
-        assert document["person"]["name"] == "Test Person"
+        assert document["person"]["first_name"] == "Test"
+        assert document["person"]["last_name"] == "Person"
         assert document["bio"]
         assert document["skills"]["technical"] or document["skills"]["functional"]
         assert document["experience"]

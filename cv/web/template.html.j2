@@ -2,26 +2,40 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>{{ person.name }} — CV</title>
+<title>{{ person.first_name }} {{ person.last_name }} — CV</title>
 <link rel="stylesheet" href="style.css">
 </head>
 {%- macro ea(path) -%}
 {%- if edit_mode %} contenteditable="true" data-path="{{ path }}"{% endif -%}
 {%- endmacro %}
+{%- set PROVIDER_BADGES = {
+  "linkedin": "in", "github": "GH", "gitlab": "GL", "medium": "M",
+  "instagram": "IG", "website": "WWW"
+} -%}
 <body{% if edit_mode %} class="edit-mode"{% endif %}>
 
 <div class="hero">
   <aside class="sidebar">
-    <img class="photo" src="{{ person.photo }}" alt="{{ person.name }}">
-    <h1{{ ea('person.name') }}>{{ person.name }}</h1>
+    <img class="photo" src="{{ person.photo }}" alt="{{ person.first_name }} {{ person.last_name }}">
+    <h1><span{{ ea('person.first_name') }}>{{ person.first_name }}</span> <span{{ ea('person.last_name') }}>{{ person.last_name }}</span></h1>
     <p class="tagline"{{ ea('person.tagline') }}>{{ person.tagline }}</p>
     <p class="quote">&ldquo;<span{{ ea('person.quote') }}>{{ person.quote }}</span>&rdquo;</p>
 
     <div class="contact">
       <p{{ ea('person.email') }}>{{ person.email }}</p>
       <p{{ ea('person.mobile') }}>{{ person.mobile }}</p>
-      <p><span class="badge">GH</span> <span{{ ea('person.github.handle') }}>{{ person.github.handle }}</span></p>
-      <p><span class="badge">in</span> <span{{ ea('person.linkedin.handle') }}>{{ person.linkedin.handle }}</span></p>
+      {% set addr = person.address or {} %}
+      {% if addr.display and addr.display != 'hide' %}
+      <p>
+        <span class="badge">&#8962;</span>
+        <span>{% if addr.display == 'full' %}{{ [addr.street, addr.city, addr.region, addr.country] | select | join(', ') }}{% else %}{{ [addr.city, addr.country] | select | join(', ') }}{% endif %}</span>
+      </p>
+      {% endif %}
+      {% for profile in person.profiles or [] %}
+      {% if profile.visible %}
+      <p><span class="badge">{{ PROVIDER_BADGES.get(profile.provider, (profile.provider or '?')[:2]|upper) }}</span> <span{{ ea('person.profiles[' ~ loop.index0 ~ '].handle') }}>{{ profile.handle }}</span></p>
+      {% endif %}
+      {% endfor %}
     </div>
 
     <div class="skills-block">

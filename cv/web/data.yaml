@@ -1,12 +1,27 @@
 person:
-  name: Jordan Rivers
+  first_name: Jordan
+  last_name: Rivers
   tagline: "Example Title | Example Specialty | Example Focus"
   quote: "This is placeholder text — replace it with your own tagline or motto."
   photo: "../../assets/images/placeholder-headshot.png"
   email: jordan.rivers@example.com
   mobile: "555-0100"
-  github: {handle: example-handle, url: "https://github.com/example-handle"}
-  linkedin: {handle: example-handle, url: "https://www.linkedin.com/in/example-handle"}
+  address:
+    city: Example City
+    region: ''
+    country: Example Country
+    postal_code: ''
+    street: ''
+    display: city
+  profiles:
+    - provider: github
+      handle: example-handle
+      url: https://github.com/example-handle
+      visible: true
+    - provider: linkedin
+      handle: example-handle
+      url: https://www.linkedin.com/in/example-handle
+      visible: true
   strengths: ["Example Strength One", "Example Strength Two", "Example Strength Three"]
 
 skills:
@@ -20,8 +35,7 @@ skills:
 
 bio:
   - >-
-    This is a placeholder bio paragraph. Replace it with a short summary of
-    your background, focus areas, and what you bring to a role.
+    This is a placeholder bio paragraph. Replace it with a short summary of your background, focus areas, and what you bring to a role.
 
 experience:
   - company: Example Company

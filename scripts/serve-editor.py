@@ -177,6 +177,17 @@ def library_page() -> str:
     )
 
 
+@app.get("/cv/web/details")
+def details_page() -> str:
+    """Serve the personal-details page (identity, contact, social profiles)."""
+    return _render_page(
+        "pages/details.html",
+        crumb="PROFILE",
+        title="Personal and contact details",
+        active="details",
+    )
+
+
 @app.get("/cv/web/build")
 def build_page() -> str:
     """Serve the tailor flow: paste a posting, choose content, compose a version."""
