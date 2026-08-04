@@ -1,0 +1,37 @@
+{% extends "shell/base.html" %}
+{% block title %}CV Studio — Content library{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/cv/web/src/pages/library.css">{% endblock %}
+{% block header_actions %}
+<div class="header-tools">
+  <button type="button" id="btn-reseed">Re-seed from source files</button>
+  <button type="button" class="primary" id="btn-new-snippet">+ New snippet</button>
+</div>
+{% endblock %}
+{% block content %}
+<div class="view active">
+  <div class="heading">
+    <div>
+      <h2>Content library</h2>
+      <p>Reusable evidence from across your career — every snippet can hold brief, standard, and detailed variants.</p>
+    </div>
+  </div>
+  <div class="library-toolbar">
+    <input id="filter-search" type="search" placeholder="Search company, heading, or text…">
+    <select id="filter-category">
+      <option value="">All categories</option>
+      <option value="bio">Bio</option>
+      <option value="skill">Skill</option>
+      <option value="experience">Experience</option>
+      <option value="part">Part</option>
+      <option value="requirement">Requirement</option>
+    </select>
+    <span id="library-status" class="hint"></span>
+  </div>
+  <div class="library" id="library-grid"></div>
+</div>
+
+<div class="modal-backdrop" id="snippet-modal">
+  <div class="modal-dialog" id="snippet-dialog"></div>
+</div>
+{% endblock %}
+{% block extra_body %}<script src="/cv/web/src/pages/library.js"></script>{% endblock %}

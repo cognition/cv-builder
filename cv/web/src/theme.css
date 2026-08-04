@@ -1,0 +1,245 @@
+/*
+ * CV Studio design tokens + shared primitives.
+ * Ported from the cv/web/wireframe.html prototype's palette
+ * (wireframe.css + wireframe-cleanup.css) so every real page in this
+ * app shares one visual language. This file is app chrome only — it
+ * must never be linked from cv/web/template.html.j2 (the printed CV
+ * document has its own style.css and must stay independent of this).
+ */
+
+:root {
+  --ink: #383e3b;
+  --muted: #6b8376;
+  --line: #dfe5e1;
+  --soft: #f4f7f4;
+  --green: #1d4a3a;
+  --pale: #e6ede9;
+  --gold: #d29b34;
+  --blue: #2b6a84;
+  --cream: #f8f5ef;
+  --focus: rgba(43, 106, 132, 0.18);
+  --danger: #9b4b43;
+  --danger-bg: #f5e5e3;
+  --warn: #825c17;
+  --warn-bg: #f7ead1;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--cream);
+  color: var(--ink);
+  font: 14px/1.5 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button, input, textarea, select {
+  font: inherit;
+  color: inherit;
+}
+
+h1, h2, h3, p { margin-top: 0; }
+
+a { color: var(--blue); }
+
+/* ---------- buttons ---------- */
+
+button, a.primary, a.button {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px 13px;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+  transition: border-color .15s, background-color .15s, color .15s, box-shadow .15s;
+}
+
+button:hover, a.primary:hover, a.button:hover { border-color: #b9c9c0; }
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+
+button:disabled { opacity: .55; cursor: default; }
+
+.primary {
+  border: 0 !important;
+  background: var(--gold) !important;
+  color: #252c29 !important;
+  font-weight: 750;
+}
+
+.primary:hover { box-shadow: 0 5px 14px rgba(78, 113, 48, .16); }
+
+.text-button,
+.link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--blue);
+  font-weight: 700;
+}
+
+/* ---------- form controls ---------- */
+
+input[type="text"],
+input[type="email"],
+input[type="tel"],
+input[type="url"],
+input[type="search"],
+input[type="number"],
+input:not([type]),
+textarea,
+select {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cbd6d0;
+  border-radius: 8px;
+  background: #fff;
+  outline: none;
+  font-size: 13px;
+}
+
+input:hover, textarea:hover, select:hover { border-color: #9fb4a8; }
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+label {
+  display: block;
+  color: #526058;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* ---------- header action clusters (Tailor / Library) ---------- */
+
+.header-tools { display: flex; align-items: center; gap: 6px; }
+.header-tools select { width: auto; min-width: 160px; padding: 8px 10px; }
+.header-tools button { padding: 8px 10px; font-size: 11px; }
+
+/* ---------- badges / pills ---------- */
+
+.badge, .pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: var(--pale);
+  color: var(--green);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+
+.pill.draft, .badge.warn { background: var(--warn-bg); color: var(--warn); }
+.pill.danger, .badge.danger { background: var(--danger-bg); color: var(--danger); }
+
+/* ---------- cards / panels ---------- */
+
+.panel, .card {
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(24, 51, 38, .025);
+}
+
+/* ---------- empty state ---------- */
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+
+.empty-state b {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  border-radius: 16px;
+  background: var(--pale);
+  color: var(--green);
+  font-size: 24px;
+  font-style: normal;
+}
+
+.empty-state h2 { margin: 0 0 6px; color: var(--ink); }
+
+/* ---------- floating PDF preview pane (Tailor + Versions) ---------- */
+
+#preview-pane {
+  display: none;
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  width: min(28rem, 42vw);
+  height: min(36rem, 70vh);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 12px 34px rgba(24, 51, 38, .22);
+  background: #fff;
+  z-index: 40;
+}
+
+#preview-pane.open { display: block; }
+#preview-pane iframe { width: 100%; height: 100%; border: 0; }
+
+/* ---------- toast ---------- */
+
+#toast {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  padding: 11px 15px;
+  border-radius: 8px;
+  background: #1b2922;
+  color: #fff;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: .2s;
+  z-index: 50;
+  pointer-events: none;
+}
+
+#toast.show { opacity: 1; transform: none; }
+
+/* ---------- dialog / modal ---------- */
+
+dialog, .modal-dialog {
+  width: min(420px, 90vw);
+  padding: 27px;
+  border: 0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .25);
+}
+
+dialog::backdrop, .modal-backdrop {
+  background: rgba(20, 32, 25, .4);
+}
+
+.modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  place-items: center;
+  padding: 24px;
+}
+
+.modal-backdrop.open { display: grid; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

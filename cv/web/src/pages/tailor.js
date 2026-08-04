@@ -3,8 +3,7 @@
 
   const STORAGE_KEY = "cvbuilder.draft.v1";
 
-  const snippetList = document.getElementById("snippet-list");
-  const snippetForm = document.getElementById("snippet-form");
+  const suggestions = document.getElementById("suggestions");
   const draftList = document.getElementById("draft-list");
   const statusEl = document.getElementById("builder-status");
   const categoryFilter = document.getElementById("filter-category");
@@ -13,8 +12,6 @@
   const variantName = document.getElementById("variant-name");
   const draftSelect = document.getElementById("draft-select");
   const btnCompose = document.getElementById("btn-compose");
-  const btnReseed = document.getElementById("btn-reseed");
-  const btnNewSnippet = document.getElementById("btn-new-snippet");
   const btnDraftLoad = document.getElementById("btn-draft-load");
   const btnDraftSave = document.getElementById("btn-draft-save");
   const btnDraftDelete = document.getElementById("btn-draft-delete");
@@ -22,10 +19,15 @@
   const btnAddTop = document.getElementById("btn-add-top");
   const btnClearMatch = document.getElementById("btn-clear-match");
   const postingText = document.getElementById("posting-text");
+  const postingCount = document.getElementById("posting-count");
   const matchLimit = document.getElementById("match-limit");
   const matchSummary = document.getElementById("match-summary");
+  const selectedCount = document.getElementById("selected-count");
+  const metric = document.getElementById("metric");
+  const metricHint = document.getElementById("metric-hint");
   const previewPane = document.getElementById("preview-pane");
   const previewFrame = document.getElementById("preview-frame");
+  const toast = document.getElementById("toast");
 
   /** @type {Array<any>} */
   let snippets = [];
@@ -35,22 +37,18 @@
   let matchMeta = new Map();
   /** @type {number[]} */
   let matchOrder = [];
-  /** @type {number|null} */
-  let editingId = null;
 
-  /**
-   * Update the status line.
-   * @param {string} message
-   */
   function setStatus(message) {
     statusEl.textContent = message;
   }
 
-  /**
-   * Escape text for safe HTML insertion.
-   * @param {string} value
-   * @returns {string}
-   */
+  function showToast(message) {
+    toast.textContent = message;
+    toast.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove("show"), 2100);
+  }
+
   function escapeHtml(value) {
     return String(value)
       .replace(/&/g, "&amp;")
@@ -59,12 +57,6 @@
       .replace(/"/g, "&quot;");
   }
 
-  /**
-   * Pick the best available variant for a preferred detail level.
-   * @param {any} snippet
-   * @param {string} preferred
-   * @returns {any|null}
-   */
   function pickVariant(snippet, preferred) {
     const variants = snippet.variants || [];
     const exact = variants.find((v) => v.detail_level === preferred);
@@ -77,23 +69,12 @@
     return variants[0] || null;
   }
 
-  /**
-   * Truncate preview text for cards.
-   * @param {string} text
-   * @param {number} max
-   * @returns {string}
-   */
   function truncate(text, max) {
     const cleaned = String(text || "").replace(/\s+/g, " ").trim();
     if (cleaned.length <= max) return cleaned;
     return cleaned.slice(0, max - 1) + "…";
   }
 
-  /**
-   * Build a display label for a snippet.
-   * @param {any} snippet
-   * @returns {string}
-   */
   function snippetLabel(snippet) {
     const bits = [];
     if (snippet.company) bits.push(snippet.company);
@@ -102,26 +83,17 @@
     return bits.join(" — ") || `Snippet #${snippet.id}`;
   }
 
-  /**
-   * Persist the current draft to localStorage.
-   */
   function autosaveLocal() {
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({
-          name: variantName.value,
-          draft: draft,
-        })
+        JSON.stringify({ name: variantName.value, draft: draft })
       );
     } catch (_err) {
       /* ignore quota / private-mode failures */
     }
   }
 
-  /**
-   * Restore a draft from localStorage if present.
-   */
   function restoreLocal() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -136,10 +108,6 @@
     }
   }
 
-  /**
-   * Load snippets from the API using current filters.
-   * @returns {Promise<void>}
-   */
   async function loadSnippets() {
     const params = new URLSearchParams();
     if (categoryFilter.value) params.set("category", categoryFilter.value);
@@ -148,20 +116,16 @@
     const resp = await fetch("/api/snippets?" + params.toString());
     if (!resp.ok) throw new Error("failed to load snippets: " + (await resp.text()));
     snippets = await resp.json();
-    renderLibrary();
+    renderSuggestions();
     setStatus(`Loaded ${snippets.length} snippets.`);
   }
 
-  /**
-   * Refresh the saved-drafts dropdown.
-   * @returns {Promise<void>}
-   */
   async function loadDraftOptions() {
     const resp = await fetch("/api/drafts");
     if (!resp.ok) throw new Error("failed to load drafts");
     const drafts = await resp.json();
     const current = draftSelect.value;
-    draftSelect.innerHTML = '<option value="">— select —</option>';
+    draftSelect.innerHTML = '<option value="">Saved drafts — select…</option>';
     drafts.forEach((item) => {
       const opt = document.createElement("option");
       opt.value = item.name;
@@ -171,141 +135,6 @@
     if (current) draftSelect.value = current;
   }
 
-  /**
-   * Content for one detail level on a snippet.
-   * @param {any} snippet
-   * @param {string} level
-   * @returns {string}
-   */
-  function levelContent(snippet, level) {
-    const variant = (snippet.variants || []).find((v) => v.detail_level === level);
-    return variant ? variant.content : "";
-  }
-
-  /**
-   * Show the create/edit snippet form.
-   * @param {any|null} snippet
-   */
-  function openSnippetForm(snippet) {
-    editingId = snippet ? snippet.id : null;
-    const levels = ["brief", "standard", "detailed"];
-    snippetForm.classList.remove("hidden");
-    snippetForm.innerHTML = `
-      <h3>${snippet ? "Edit snippet" : "New snippet"}</h3>
-      <label>Category
-        <select id="form-category">
-          ${["bio", "skill", "experience", "part", "requirement"]
-            .map(
-              (c) =>
-                `<option value="${c}" ${
-                  (snippet ? snippet.category : "experience") === c ? "selected" : ""
-                }>${c}</option>`
-            )
-            .join("")}
-        </select>
-      </label>
-      <label>Heading <input id="form-heading" type="text" value="${escapeHtml(
-        (snippet && snippet.heading) || ""
-      )}"></label>
-      <label>Company <input id="form-company" type="text" value="${escapeHtml(
-        (snippet && snippet.company) || ""
-      )}"></label>
-      <label>Role <input id="form-role" type="text" value="${escapeHtml(
-        (snippet && snippet.role) || ""
-      )}"></label>
-      <label>Tags (comma-separated) <input id="form-tags" type="text" value="${escapeHtml(
-        ((snippet && snippet.tags) || []).join(", ")
-      )}"></label>
-      ${levels
-        .map(
-          (level) => `
-        <label>${level}
-          <textarea id="form-${level}" placeholder="${level} content">${escapeHtml(
-            snippet ? levelContent(snippet, level) : ""
-          )}</textarea>
-        </label>
-        ${
-          snippet && levelContent(snippet, level)
-            ? `<button type="button" class="btn-del-level" data-level="${level}">Delete ${level} variant</button>`
-            : ""
-        }
-      `
-        )
-        .join("")}
-      <div class="form-actions">
-        <button type="button" id="form-save">Save snippet</button>
-        <button type="button" id="form-cancel">Cancel</button>
-      </div>
-    `;
-    snippetForm.querySelector("#form-save").addEventListener("click", () => {
-      saveSnippetForm().catch((err) => setStatus("Error: " + err.message));
-    });
-    snippetForm.querySelector("#form-cancel").addEventListener("click", closeSnippetForm);
-    snippetForm.querySelectorAll(".btn-del-level").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const level = btn.getAttribute("data-level");
-        if (!editingId || !level) return;
-        if (!confirm(`Delete the ${level} variant?`)) return;
-        fetch(`/api/snippets/${editingId}/variants/${level}`, { method: "DELETE" })
-          .then(async (resp) => {
-            if (!resp.ok) throw new Error(await resp.text());
-            setStatus(`Deleted ${level} variant.`);
-            const refreshed = await fetch(`/api/snippets/${editingId}`);
-            const body = await refreshed.json();
-            openSnippetForm(body);
-            await loadSnippets();
-          })
-          .catch((err) => setStatus("Error: " + err.message));
-      });
-    });
-    snippetForm.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }
-
-  /**
-   * Hide the snippet form.
-   */
-  function closeSnippetForm() {
-    editingId = null;
-    snippetForm.classList.add("hidden");
-    snippetForm.innerHTML = "";
-  }
-
-  /**
-   * Persist the snippet form via create or update.
-   * @returns {Promise<void>}
-   */
-  async function saveSnippetForm() {
-    const payload = {
-      category: document.getElementById("form-category").value,
-      heading: document.getElementById("form-heading").value.trim() || null,
-      company: document.getElementById("form-company").value.trim() || null,
-      role: document.getElementById("form-role").value.trim() || null,
-      tags: document.getElementById("form-tags").value,
-      variants: {
-        brief: document.getElementById("form-brief").value,
-        standard: document.getElementById("form-standard").value,
-        detailed: document.getElementById("form-detailed").value,
-      },
-    };
-    const wasEdit = Boolean(editingId);
-    const url = wasEdit ? `/api/snippets/${editingId}` : "/api/snippets";
-    const method = wasEdit ? "PUT" : "POST";
-    const resp = await fetch(url, {
-      method: method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const body = await resp.json();
-    if (!resp.ok) throw new Error(body.error || "save failed");
-    closeSnippetForm();
-    await loadSnippets();
-    setStatus(wasEdit ? "Snippet updated." : `Created snippet #${body.id}.`);
-  }
-
-  /**
-   * Ordered snippet list honouring match ranking when present.
-   * @returns {Array<any>}
-   */
   function orderedSnippets() {
     if (!matchOrder.length) return snippets;
     const byId = new Map(snippets.map((s) => [s.id, s]));
@@ -315,26 +144,26 @@
     return ranked.concat(rest);
   }
 
-  /**
-   * Render the left-pane snippet library.
-   */
-  function renderLibrary() {
-    snippetList.innerHTML = "";
+  function isInDraft(snippetId) {
+    return draft.some((item) => item.snippet_id === snippetId);
+  }
+
+  function renderSuggestions() {
+    suggestions.innerHTML = "";
     const items = orderedSnippets();
     if (!items.length) {
-      snippetList.innerHTML = '<p class="empty">No snippets match these filters.</p>';
+      suggestions.innerHTML = '<p class="empty-row">No snippets match these filters.</p>';
       return;
     }
     const preferred = defaultLevel.value;
     items.forEach((snippet) => {
-      const card = document.createElement("article");
-      card.className = "snippet-card";
+      const row = document.createElement("label");
       const levels = (snippet.variants || []).map((v) => v.detail_level);
-      const selectedLevel = levels.includes(preferred)
-        ? preferred
-        : levels[0] || preferred;
+      const selectedLevel = levels.includes(preferred) ? preferred : levels[0] || preferred;
       const variant = pickVariant(snippet, selectedLevel);
       const meta = matchMeta.get(snippet.id);
+      const checked = isInDraft(snippet.id);
+      row.className = "suggestion" + (checked ? " selected" : "");
       const options = ["brief", "standard", "detailed"]
         .map((level) => {
           const disabled = levels.length && !levels.includes(level) ? " disabled" : "";
@@ -342,70 +171,39 @@
           return `<option value="${level}"${sel}${disabled}>${level}</option>`;
         })
         .join("");
-      card.innerHTML = `
-        <h3>${escapeHtml(snippetLabel(snippet))}</h3>
-        <div class="meta">
-          <span class="badge">${escapeHtml(snippet.category || "")}</span>
-          ${
-            meta
-              ? `<span class="badge score-badge">score ${escapeHtml(
-                  String(meta.score)
-                )}</span>`
-              : ""
-          }
-          ${(snippet.tags || [])
-            .slice(0, 4)
-            .map((t) => `<span class="badge">${escapeHtml(t)}</span>`)
-            .join("")}
+      row.innerHTML = `
+        <input type="checkbox" ${checked ? "checked" : ""}>
+        <div>
+          <h3>${escapeHtml(snippetLabel(snippet))}</h3>
+          <p>${escapeHtml(truncate(variant ? variant.content : "", 200))}</p>
+          ${meta && meta.matched_terms.length ? `<p class="match-terms">Matched: ${escapeHtml(meta.matched_terms.slice(0, 6).join(", "))}</p>` : ""}
         </div>
-        ${
-          meta && meta.matched_terms.length
-            ? `<p class="match-terms">Matched: ${escapeHtml(
-                meta.matched_terms.slice(0, 8).join(", ")
-              )}</p>`
-            : ""
-        }
-        <p class="preview-text">${escapeHtml(truncate(variant ? variant.content : "", 280))}</p>
-        <div class="card-actions">
-          <select class="level-select" data-id="${snippet.id}">${options}</select>
-          <button type="button" class="btn-add" data-id="${snippet.id}">Add to draft</button>
-          <button type="button" class="btn-edit" data-id="${snippet.id}">Edit</button>
-          <button type="button" class="btn-delete" data-id="${snippet.id}">Delete</button>
+        <div class="row-meta">
+          ${meta ? `<span class="badge">score ${escapeHtml(String(meta.score))}</span>` : `<span class="badge">${escapeHtml(snippet.category || "")}</span>`}
+          <select class="level-select">${options}</select>
         </div>
       `;
-      const levelSelect = card.querySelector(".level-select");
+      const checkbox = row.querySelector('input[type="checkbox"]');
+      const levelSelect = row.querySelector(".level-select");
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          addToDraft(snippet, levelSelect.value);
+        } else {
+          removeFromDraft(snippet.id);
+        }
+        row.classList.toggle("selected", checkbox.checked);
+      });
+      levelSelect.addEventListener("click", (event) => event.stopPropagation());
       levelSelect.addEventListener("change", () => {
-        const next = pickVariant(snippet, levelSelect.value);
-        card.querySelector(".preview-text").textContent = truncate(
-          next ? next.content : "",
-          280
-        );
+        if (checkbox.checked) {
+          removeFromDraft(snippet.id);
+          addToDraft(snippet, levelSelect.value);
+        }
       });
-      card.querySelector(".btn-add").addEventListener("click", () => {
-        addToDraft(snippet, levelSelect.value);
-      });
-      card.querySelector(".btn-edit").addEventListener("click", () => {
-        openSnippetForm(snippet);
-      });
-      card.querySelector(".btn-delete").addEventListener("click", () => {
-        if (!confirm(`Delete snippet “${snippetLabel(snippet)}”?`)) return;
-        fetch(`/api/snippets/${snippet.id}`, { method: "DELETE" })
-          .then(async (resp) => {
-            if (!resp.ok) throw new Error(await resp.text());
-            setStatus("Snippet deleted.");
-            return loadSnippets();
-          })
-          .catch((err) => setStatus("Error: " + err.message));
-      });
-      snippetList.appendChild(card);
+      suggestions.appendChild(row);
     });
   }
 
-  /**
-   * Add a snippet to the draft list.
-   * @param {any} snippet
-   * @param {string} detailLevel
-   */
   function addToDraft(snippet, detailLevel) {
     const variant = pickVariant(snippet, detailLevel);
     if (!variant) {
@@ -421,16 +219,24 @@
     });
     renderDraft();
     autosaveLocal();
-    setStatus(`Added “${snippetLabel(snippet)}” (${variant.detail_level}).`);
+    setStatus(`Added "${snippetLabel(snippet)}" (${variant.detail_level}).`);
   }
 
-  /**
-   * Render the draft CV selection list.
-   */
+  function removeFromDraft(snippetId) {
+    draft = draft.filter((item) => item.snippet_id !== snippetId);
+    renderDraft();
+    autosaveLocal();
+  }
+
   function renderDraft() {
     draftList.innerHTML = "";
+    selectedCount.textContent = draft.length;
+    metric.textContent = draft.length;
+    metricHint.textContent = draft.length
+      ? `About ${Math.max(1, Math.ceil(draft.length / 6))} page(s)`
+      : "Add content to begin";
     if (!draft.length) {
-      draftList.innerHTML = '<li class="empty">No snippets selected yet.</li>';
+      draftList.innerHTML = '<li class="empty-row">No snippets selected yet.</li>';
       return;
     }
     draft.forEach((item, index) => {
@@ -444,9 +250,9 @@
         </div>
         <p class="preview-text">${escapeHtml(item.preview)}</p>
         <div class="card-actions">
-          <button type="button" data-action="up" data-index="${index}" ${index === 0 ? "disabled" : ""}>↑</button>
-          <button type="button" data-action="down" data-index="${index}" ${index === draft.length - 1 ? "disabled" : ""}>↓</button>
-          <button type="button" data-action="remove" data-index="${index}">×</button>
+          <button type="button" data-action="up" data-index="${index}" ${index === 0 ? "disabled" : ""}>&uarr;</button>
+          <button type="button" data-action="down" data-index="${index}" ${index === draft.length - 1 ? "disabled" : ""}>&darr;</button>
+          <button type="button" data-action="remove" data-index="${index}">&times;</button>
         </div>
       `;
       li.querySelectorAll("button").forEach((btn) => {
@@ -456,15 +262,12 @@
           if (action === "remove") {
             draft.splice(idx, 1);
           } else if (action === "up" && idx > 0) {
-            const tmp = draft[idx - 1];
-            draft[idx - 1] = draft[idx];
-            draft[idx] = tmp;
+            [draft[idx - 1], draft[idx]] = [draft[idx], draft[idx - 1]];
           } else if (action === "down" && idx < draft.length - 1) {
-            const tmp = draft[idx + 1];
-            draft[idx + 1] = draft[idx];
-            draft[idx] = tmp;
+            [draft[idx + 1], draft[idx]] = [draft[idx], draft[idx + 1]];
           }
           renderDraft();
+          renderSuggestions();
           autosaveLocal();
         });
       });
@@ -472,14 +275,10 @@
     });
   }
 
-  /**
-   * Compose the draft into a named variant and show the PDF.
-   * @returns {Promise<void>}
-   */
   async function composeDraft() {
     const name = variantName.value.trim();
     if (!name) {
-      setStatus("Please enter a variant name.");
+      setStatus("Please enter a version name.");
       return;
     }
     if (!draft.length) {
@@ -487,7 +286,7 @@
       return;
     }
     btnCompose.disabled = true;
-    setStatus("Composing variant and rendering PDF…");
+    setStatus("Composing version and rendering PDF…");
     try {
       const payload = {
         name: name,
@@ -508,9 +307,8 @@
         previewPane.classList.add("open");
         previewFrame.src = "/" + body.pdf + "?t=" + Date.now();
       }
-      setStatus(
-        `Saved ${body.data_yaml}` + (body.pdf ? ` and ${body.pdf}` : "") + "."
-      );
+      showToast(`Saved ${body.data_yaml}${body.pdf ? ` and ${body.pdf}` : ""}.`);
+      setStatus("Ready.");
     } catch (err) {
       setStatus("Error: " + err.message);
     } finally {
@@ -518,14 +316,10 @@
     }
   }
 
-  /**
-   * Save the current draft to the database.
-   * @returns {Promise<void>}
-   */
   async function saveDraftRemote() {
     const name = variantName.value.trim();
     if (!name) {
-      setStatus("Enter a name before saving a draft.");
+      setStatus("Enter a version name before saving a draft.");
       return;
     }
     const resp = await fetch("/api/drafts/" + encodeURIComponent(name), {
@@ -546,13 +340,9 @@
     await loadDraftOptions();
     draftSelect.value = name;
     autosaveLocal();
-    setStatus(`Draft “${name}” saved.`);
+    showToast(`Draft "${name}" saved.`);
   }
 
-  /**
-   * Load the selected remote draft into the UI.
-   * @returns {Promise<void>}
-   */
   async function loadDraftRemote() {
     const name = draftSelect.value || variantName.value.trim();
     if (!name) {
@@ -571,36 +361,27 @@
       preview: item.preview || "",
     }));
     renderDraft();
+    renderSuggestions();
     autosaveLocal();
-    setStatus(`Loaded draft “${body.name}” (${draft.length} items).`);
+    showToast(`Loaded draft "${body.name}" (${draft.length} items).`);
   }
 
-  /**
-   * Delete the selected remote draft.
-   * @returns {Promise<void>}
-   */
   async function deleteDraftRemote() {
     const name = draftSelect.value || variantName.value.trim();
     if (!name) {
       setStatus("Select a draft to delete.");
       return;
     }
-    if (!confirm(`Delete draft “${name}”?`)) return;
-    const resp = await fetch("/api/drafts/" + encodeURIComponent(name), {
-      method: "DELETE",
-    });
+    if (!confirm(`Delete draft "${name}"?`)) return;
+    const resp = await fetch("/api/drafts/" + encodeURIComponent(name), { method: "DELETE" });
     if (!resp.ok) {
       const body = await resp.json();
       throw new Error(body.error || "draft delete failed");
     }
     await loadDraftOptions();
-    setStatus(`Deleted draft “${name}”.`);
+    showToast(`Deleted draft "${name}".`);
   }
 
-  /**
-   * Rank snippets against the pasted posting.
-   * @returns {Promise<void>}
-   */
   async function runMatch() {
     const text = postingText.value.trim();
     if (!text) {
@@ -622,12 +403,8 @@
     matchOrder = [];
     body.forEach((item) => {
       matchOrder.push(item.snippet_id);
-      matchMeta.set(item.snippet_id, {
-        score: item.score,
-        matched_terms: item.matched_terms || [],
-      });
+      matchMeta.set(item.snippet_id, { score: item.score, matched_terms: item.matched_terms || [] });
     });
-    // Prefer matched snippets in the library even if filters hid some — merge in.
     const known = new Set(snippets.map((s) => s.id));
     body.forEach((item) => {
       if (!known.has(item.snippet_id) && item.snippet) {
@@ -635,16 +412,11 @@
         known.add(item.snippet_id);
       }
     });
-    renderLibrary();
-    matchSummary.textContent = `Ranked ${body.length} snippets. Top score: ${
-      body[0] ? body[0].score : 0
-    }.`;
+    renderSuggestions();
+    matchSummary.textContent = `Ranked ${body.length} snippets. Top score: ${body[0] ? body[0].score : 0}.`;
     setStatus(`Matched ${body.length} snippets to the posting.`);
   }
 
-  /**
-   * Add the top N matched snippets to the draft.
-   */
   function addTopMatches() {
     if (!matchOrder.length) {
       setStatus("Run Suggest snippets first.");
@@ -654,45 +426,22 @@
     const byId = new Map(snippets.map((s) => [s.id, s]));
     let added = 0;
     matchOrder.slice(0, limit).forEach((id) => {
+      if (isInDraft(id)) return;
       const snippet = byId.get(id);
       if (!snippet) return;
       addToDraft(snippet, defaultLevel.value);
       added += 1;
     });
+    renderSuggestions();
     setStatus(`Added ${added} matched snippets to the draft.`);
   }
 
-  /**
-   * Clear match ranking and restore default library order.
-   */
   function clearMatch() {
     matchMeta = new Map();
     matchOrder = [];
     matchSummary.textContent = "";
-    renderLibrary();
+    renderSuggestions();
     setStatus("Cleared ranking.");
-  }
-
-  /**
-   * Re-seed the database from YAML and markdown sources.
-   * @returns {Promise<void>}
-   */
-  async function reseed() {
-    btnReseed.disabled = true;
-    setStatus("Re-seeding database…");
-    try {
-      const resp = await fetch("/api/seed", { method: "POST" });
-      const body = await resp.json();
-      if (!resp.ok) throw new Error(body.error || "seed failed");
-      const total = Object.values(body).reduce((a, b) => a + Number(b || 0), 0);
-      setStatus(`Seeded ${total} snippets. Reloading…`);
-      clearMatch();
-      await loadSnippets();
-    } catch (err) {
-      setStatus("Error: " + err.message);
-    } finally {
-      btnReseed.disabled = false;
-    }
   }
 
   let searchTimer = null;
@@ -705,15 +454,14 @@
       loadSnippets().catch((err) => setStatus("Error: " + err.message));
     }, 250);
   });
-  defaultLevel.addEventListener("change", renderLibrary);
+  defaultLevel.addEventListener("change", renderSuggestions);
   variantName.addEventListener("input", autosaveLocal);
+  postingText.addEventListener("input", () => {
+    postingCount.textContent = postingText.value.length + " characters";
+  });
   btnCompose.addEventListener("click", () => {
     composeDraft().catch((err) => setStatus("Error: " + err.message));
   });
-  btnReseed.addEventListener("click", () => {
-    reseed().catch((err) => setStatus("Error: " + err.message));
-  });
-  btnNewSnippet.addEventListener("click", () => openSnippetForm(null));
   btnDraftSave.addEventListener("click", () => {
     saveDraftRemote().catch((err) => setStatus("Error: " + err.message));
   });
@@ -731,6 +479,7 @@
 
   restoreLocal();
   renderDraft();
+  postingText.dispatchEvent(new Event("input"));
   loadDraftOptions().catch((err) => setStatus("Error: " + err.message));
   loadSnippets().catch((err) => setStatus("Error: " + err.message));
 })();

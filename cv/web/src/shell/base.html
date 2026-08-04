@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}CV Studio{% endblock %}</title>
+<link rel="icon" type="image/png" href="/assets/branding/favicon.png">
+<link rel="apple-touch-icon" href="/assets/branding/favicon.png">
+<link rel="stylesheet" href="/cv/web/src/theme.css">
+<link rel="stylesheet" href="/cv/web/src/shell/shell.css">
+{% block extra_css %}{% endblock %}
+</head>
+<body>
+<div class="shell">
+{% include "shell/nav.html" %}
+<main>
+  <header>
+    <div><small>{{ crumb }}</small><h1>{{ title }}</h1></div>
+    {% block header_actions %}{% endblock %}
+  </header>
+  {% block content %}{% endblock %}
+</main>
+</div>
+<div id="toast"></div>
+{% block extra_body %}{% endblock %}
+</body>
+</html>

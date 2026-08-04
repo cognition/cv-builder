@@ -1,0 +1,49 @@
+{% extends "shell/base.html" %}
+{% block title %}CV Studio — Home{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/cv/web/src/pages/home.css">{% endblock %}
+{% block content %}
+<div class="view active">
+  <div class="hero">
+    <div>
+      <em>MASTER CV + SNIPPET LIBRARY</em>
+      <h2>Build a focused CV for your next role.</h2>
+      <p>Start from your master CV, match it to a job posting, and export a tailored version.</p>
+      <a class="primary" href="/cv/web/build">Tailor a new CV &rarr;</a>
+    </div>
+  </div>
+
+  <div class="heading">
+    <div>
+      <h2>Recent versions</h2>
+      <p>Pick up where you left off.</p>
+    </div>
+    <a href="/cv/web/variants">View all &rarr;</a>
+  </div>
+
+  {% if recent_variants %}
+  <div class="cards">
+    {% for variant in recent_variants %}
+    <article>
+      <div class="thumb">CV<hr><hr><hr></div>
+      <div>
+        <label class="{{ 'draft' if not variant.pdf else '' }}">{{ 'READY' if variant.pdf else 'DRAFT' }}</label>
+        <h3>{{ variant.name }}</h3>
+        <p>Updated {{ variant.updated_at[:10] }}</p>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <b>&#9670;</b>
+    <h2>No versions yet</h2>
+    <p>Tailor your first CV to see it appear here.</p>
+  </div>
+  {% endif %}
+
+  <div class="stats">
+    <b>{{ snippet_count }}<small>Library snippets</small></b>
+    <b>{{ variant_count }}<small>CV versions</small></b>
+  </div>
+</div>
+{% endblock %}

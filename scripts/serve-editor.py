@@ -41,9 +41,24 @@ from cvbuilder.matcher import SnippetMatcher
 from cvbuilder.models import DetailLevel, Snippet, SnippetVariant
 
 from flask import Flask, jsonify, request, send_from_directory
+from jinja2 import (
+    Environment as JinjaEnvironment,
+    FileSystemLoader as JinjaFSLoader,
+    select_autoescape,
+)
 from ruamel.yaml import YAML
 
 app = Flask(__name__, static_folder=None)
+
+# Real app-chrome pages (Home, Tailor, Content library, Versions, Assets,
+# Connect AI) render through cv/web/src/ Jinja templates that share one
+# app shell (cv/web/src/shell/base.html). This is separate from
+# cvweb.render_html(), which renders the CV document itself
+# (template.html.j2) and must stay untouched by app-chrome concerns.
+_APP_ENV = JinjaEnvironment(
+    loader=JinjaFSLoader(str(cvweb.WEB_DIR / "src")),
+    autoescape=select_autoescape(["html"]),
+)
 
 PREVIEW_PDF = cvweb.REPO_ROOT / "cv" / "current" / "cv.pdf"
 DEFAULT_DB = cvweb.REPO_ROOT / "data" / "snippets.db"
@@ -96,6 +111,11 @@ def _parse_tags(raw: Any) -> list[str]:
     return []
 
 
+def _render_page(template_name: str, **context: Any) -> str:
+    """Render one of the real app-chrome pages through the shared shell."""
+    return _APP_ENV.get_template(template_name).render(**context)
+
+
 def _apply_variants(
     database: SnippetDatabase, snippet_id: int, payload: dict[str, Any]
 ) -> None:
@@ -126,51 +146,90 @@ def _apply_variants(
         )
 
 
+@app.get("/cv/web/")
+def home_page() -> str:
+    """Serve the real dashboard: live snippet/variant counts + recent versions."""
+    database = _database()
+    snippet_count = len(database.list_snippets())
+    variants = _list_variants()
+    return _render_page(
+        "pages/home.html",
+        crumb="WORKSPACE",
+        title="CV Studio",
+        active="home",
+        snippet_count=snippet_count,
+        variant_count=len(variants),
+        recent_variants=variants[:4],
+    )
+
+
 @app.get("/cv/web/edit")
 def edit_page() -> str:
     """Serve the in-place CV editor page."""
     return cvweb.render_html(edit_mode=True)
 
 
+@app.get("/cv/web/library")
+def library_page() -> str:
+    """Serve the content-library browse view over the snippet database."""
+    return _render_page(
+        "pages/library.html", crumb="LIBRARY", title="Your career content", active="library"
+    )
+
+
 @app.get("/cv/web/build")
 def build_page() -> str:
-    """Serve the custom-CV snippet builder page."""
-    return (cvweb.WEB_DIR / "builder.html").read_text(encoding="utf-8")
+    """Serve the tailor flow: paste a posting, choose content, compose a version."""
+    return _render_page(
+        "pages/tailor.html", crumb="NEW TAILORED CV", title="Tell us about the role", active="tailor"
+    )
 
 
 @app.get("/cv/web/variants")
 def variants_page() -> str:
     """Serve the composed-variant manager page."""
-    return (cvweb.WEB_DIR / "variants.html").read_text(encoding="utf-8")
+    return _render_page(
+        "pages/versions.html", crumb="VERSIONS", title="Application-ready CVs", active="versions"
+    )
+
+
+@app.get("/cv/web/connect")
+def connect_page() -> str:
+    """Serve the Connect AI (MCP) setup page."""
+    return _render_page(
+        "pages/connect.html",
+        crumb="CONNECT AI",
+        title="Use CV Studio with your assistant",
+        active="connect",
+    )
+
+
+@app.get("/cv/web/wireframe")
+def wireframe_page() -> str:
+    """Serve the standalone, sample-data-only product wireframe."""
+    return (cvweb.WEB_DIR / "wireframe.html").read_text(encoding="utf-8")
 
 
 @app.get("/cv/web/docs")
 def docs_page() -> str:
     """Serve README.md as a plain readable page — the "how to use" link."""
-    from markupsafe import escape
-
     readme = (cvweb.REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    return (
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-        "<title>CV Builder — How to use</title>"
-        "<link rel=\"stylesheet\" href=\"/cv/web/builder.css\"></head>"
-        "<body class=\"builder\">"
-        "<header class=\"builder-header\"><div><h1>How to use</h1>"
-        "<p class=\"subtitle\">README.md</p></div>"
-        "<nav class=\"builder-nav\">"
-        "<a href=\"/cv/web/edit\">Editor</a>"
-        "<a href=\"/cv/web/build\">Builder</a>"
-        "<a href=\"/cv/web/variants\">Variants</a>"
-        "</nav></header>"
-        "<pre style=\"white-space:pre-wrap;max-width:860px;margin:0 auto;"
-        f"padding:1.5rem 1rem 3rem;line-height:1.5;\">{escape(readme)}</pre>"
-        "</body></html>"
+    return _render_page(
+        "pages/docs.html", crumb="DOCS", title="How to use", readme=readme
     )
 
 
 def _history() -> cvweb.EditHistory:
     """Return the edit-history store for the active data.yaml."""
     return cvweb.edit_history()
+
+
+@app.get("/api/person")
+def api_get_person() -> Any:
+    """Return the person block of data.yaml (read-only) for the Assets page."""
+    data = cvweb.load_data()
+    person = data.get("person") if isinstance(data, dict) else None
+    return jsonify(person if isinstance(person, dict) else {})
 
 
 @app.post("/api/save")
@@ -482,6 +541,14 @@ def _unique_image_path(stem: str, ext: str) -> Path:
     return candidate
 
 
+@app.get("/cv/web/assets")
+def assets_page() -> str:
+    """Serve the asset library page over the existing images API."""
+    return _render_page(
+        "pages/assets.html", crumb="ASSET LIBRARY", title="Your visual identity", active="assets"
+    )
+
+
 @app.get("/api/images")
 def api_list_images() -> Any:
     """List images available under assets/images/."""
@@ -551,9 +618,8 @@ def api_fetch_image() -> Any:
     return jsonify(_image_entry(destination)), 201
 
 
-@app.get("/api/variants")
-def api_list_variants() -> Any:
-    """List composed CV variants under cv/variants/."""
+def _list_variants() -> list[dict[str, Any]]:
+    """Describe every composed CV variant under cv/variants/, newest first."""
     variants: list[dict[str, Any]] = []
     if VARIANTS_DIR.is_dir():
         for path in sorted(VARIANTS_DIR.iterdir()):
@@ -564,9 +630,8 @@ def api_list_variants() -> Any:
                 continue
             pdfs = sorted(path.glob("*.pdf"))
             pdf_path: Optional[Path] = pdfs[0] if pdfs else None
-            mtime = datetime.fromtimestamp(
-                data_yaml.stat().st_mtime, tz=timezone.utc
-            ).isoformat()
+            mtime_ts = data_yaml.stat().st_mtime
+            mtime = datetime.fromtimestamp(mtime_ts, tz=timezone.utc).isoformat()
             variants.append(
                 {
                     "name": path.name,
@@ -577,9 +642,19 @@ def api_list_variants() -> Any:
                         else None
                     ),
                     "updated_at": mtime,
+                    "_mtime": mtime_ts,
                 }
             )
-    return jsonify(variants)
+    variants.sort(key=lambda item: item["_mtime"], reverse=True)
+    for item in variants:
+        del item["_mtime"]
+    return variants
+
+
+@app.get("/api/variants")
+def api_list_variants() -> Any:
+    """List composed CV variants under cv/variants/."""
+    return jsonify(_list_variants())
 
 
 @app.delete("/api/variants/<name>")

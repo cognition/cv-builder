@@ -1,0 +1,18 @@
+{% extends "shell/base.html" %}
+{% block title %}CV Studio — Versions{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/cv/web/src/pages/versions.css">{% endblock %}
+{% block header_actions %}<a class="primary" href="/cv/web/build">+ New tailored CV</a>{% endblock %}
+{% block content %}
+<div class="view active">
+  <div class="heading">
+    <div>
+      <h2>CV versions</h2>
+      <p>Drafts and exported application documents, composed from your snippet library.</p>
+    </div>
+    <span id="versions-status" class="hint"></span>
+  </div>
+  <div class="version-list" id="version-list"></div>
+</div>
+<div id="preview-pane"><iframe id="preview-frame" src="about:blank" title="PDF preview"></iframe></div>
+{% endblock %}
+{% block extra_body %}<script src="/cv/web/src/pages/versions.js"></script>{% endblock %}
