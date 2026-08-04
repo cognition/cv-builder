@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from io import BytesIO
 from typing import Any, Optional
 
 from behave import given, then, when
@@ -143,6 +144,30 @@ def step_page_contains(context: Context, fragment: str) -> None:
 def step_has_element(context: Context, selector: str) -> None:
     """Assert a CSS selector matches."""
     assert has_selector(page(context), selector), f"selector {selector!r} not found"
+
+
+@then('the import mode "{mode}" is available')
+def step_import_mode_available(context: Context, mode: str) -> None:
+    """Assert an import mode radio exists and can be selected."""
+    radio = page(context).select_one(f'input[name="import-mode"][value="{mode}"]')
+    assert radio is not None, f"import mode {mode!r} not found"
+    assert not radio.has_attr("disabled"), f"import mode {mode!r} is disabled"
+
+
+@then('the import mode "{mode}" is disabled')
+def step_import_mode_disabled(context: Context, mode: str) -> None:
+    """Assert an import mode radio exists but is disabled."""
+    radio = page(context).select_one(f'input[name="import-mode"][value="{mode}"]')
+    assert radio is not None, f"import mode {mode!r} not found"
+    assert radio.has_attr("disabled"), f"import mode {mode!r} is enabled"
+
+
+@then('the import mode "{mode}" is selected')
+def step_import_mode_selected(context: Context, mode: str) -> None:
+    """Assert an import mode radio is checked by default."""
+    radio = page(context).select_one(f'input[name="import-mode"][value="{mode}"]')
+    assert radio is not None, f"import mode {mode!r} not found"
+    assert radio.has_attr("checked"), f"import mode {mode!r} is not selected"
 
 
 @then("the Master CV editor document is present")
@@ -319,6 +344,136 @@ def step_home_snippet_count(context: Context) -> None:
     text = stats.get_text(" ", strip=True)
     assert re.search(r"\d+", text), f"no numeric count in {text!r}"
     assert "snippet" in text.lower()
+
+
+@then("the home page reports a versions count")
+def step_home_versions_count(context: Context) -> None:
+    """Assert the home stats strip shows a CV versions count."""
+    soup = page(context)
+    stats = soup.select_one(".stats")
+    assert stats is not None, "home stats missing"
+    text = stats.get_text(" ", strip=True)
+    assert "version" in text.lower(), f"versions stat missing in {text!r}"
+
+
+@when("I upload a sample resume text file via the API")
+def step_upload_resume(context: Context) -> None:
+    """POST a multipart sample resume to ``/api/imports``."""
+    sample = (
+        "Jordan Rivers\n\n"
+        "Summary\n"
+        "Platform leader with a decade of experience building resilient cloud systems.\n\n"
+        "Experience\n"
+        "Staff Platform Engineer — Acme Corp (2021 - Present)\n"
+        "- Led migration of 40+ services to Kubernetes\n"
+        "- Built the on-call incident response program\n\n"
+        "Skills\n"
+        "Kubernetes, Terraform, AWS\n\n"
+        "Education\n"
+        "BSc Computer Science, State University, 2013\n"
+    )
+    response = context.client.post(
+        "/api/imports",
+        data={"file": (BytesIO(sample.encode("utf-8")), "resume.txt")},
+        content_type="multipart/form-data",
+    )
+    context.response = response
+    context.last_response = response
+    context.response_json = response.get_json()
+    if isinstance(context.response_json, dict):
+        context.import_token = context.response_json.get("token")
+
+
+@given("a staged sample resume upload")
+def step_stage_sample_resume_upload(context: Context) -> None:
+    """Stage a sample resume and capture master-person state before confirm."""
+    sample = (
+        "Summary\n"
+        "Platform leader.\n\n"
+        "Experience\n"
+        "Engineer - Acme\n"
+        "- Built things\n\n"
+        "Skills\n"
+        "Python\n\n"
+        "Education\n"
+        "BSc\n"
+    )
+    response = context.client.post(
+        "/api/imports",
+        data={"file": (BytesIO(sample.encode("utf-8")), "resume.txt")},
+        content_type="multipart/form-data",
+    )
+    context.response = response
+    context.last_response = response
+    context.response_json = response.get_json()
+    assert response.status_code == 201, context.response_json
+    assert isinstance(context.response_json, dict), context.response_json
+    context.import_token = context.response_json.get("token")
+    assert context.import_token, f"no import token in {context.response_json!r}"
+
+    person_response = context.client.get("/api/person")
+    context.person_before = person_response.get_json()
+    assert isinstance(context.person_before, dict), context.person_before
+
+
+@when("I confirm the staged import via the API")
+def step_confirm_import(context: Context) -> None:
+    """Confirm the staged import token created by the previous step."""
+    assert context.import_token, "no import token — upload a resume first"
+    body = api_json(
+        context, "post", f"/api/imports/{context.import_token}/confirm", {}
+    )
+    context.last_response = context.response
+    if isinstance(body, dict):
+        context.import_id = body.get("id")
+
+
+@when('I confirm the import with mode "{mode}"')
+def step_confirm_import_with_mode(context: Context, mode: str) -> None:
+    """Confirm the staged import token using an explicit import mode."""
+    assert context.import_token, "no import token - upload a resume first"
+    body = api_json(
+        context,
+        "post",
+        f"/api/imports/{context.import_token}/confirm",
+        {"mode": mode},
+    )
+    context.last_response = context.response
+    if isinstance(body, dict):
+        context.import_id = body.get("id")
+
+
+@then("the imports list is non-empty")
+def step_imports_nonempty(context: Context) -> None:
+    """GET /api/imports and require at least one record."""
+    body = api_json(context, "get", "/api/imports")
+    context.last_response = context.response
+    assert isinstance(body, list) and body, f"expected imports, got {body!r}"
+
+
+@then("the master CV person first name is unchanged")
+def step_master_person_first_name_unchanged(context: Context) -> None:
+    """Assert master import preserves existing person details."""
+    after = context.client.get("/api/person").get_json()
+    assert isinstance(after, dict), after
+    assert after["first_name"] == context.person_before["first_name"]
+
+
+@then("the master CV has non-empty bio content")
+def step_master_bio_nonempty(context: Context) -> None:
+    """Assert master import wrote non-empty biography content."""
+    import cvweb
+
+    data = cvweb.load_data()
+    assert data.get("bio"), "expected imported bio content"
+
+
+@then("the import created library snippets")
+def step_import_created_library_snippets(context: Context) -> None:
+    """Assert master import also created reusable library snippets."""
+    body = context.response_json
+    assert isinstance(body, dict), body
+    assert body["snippet_count"] > 0
 
 
 def _preferred_detail_level(match: dict[str, Any]) -> str:

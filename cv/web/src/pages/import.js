@@ -50,6 +50,14 @@
       dropZone.classList.remove("dragging");
     })
   );
+  document.querySelectorAll('input[name="import-mode"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      document.querySelectorAll(".import-choice").forEach((el) =>
+        el.classList.remove("selected")
+      );
+      input.closest(".import-choice").classList.add("selected");
+    });
+  });
   dropZone.addEventListener("drop", (event) => {
     if (event.dataTransfer.files.length) uploadFile(event.dataTransfer.files[0]);
   });
@@ -166,18 +174,41 @@
     document.querySelectorAll("#stage-review [data-section]").forEach((box) => {
       sections[box.dataset.section] = box.checked;
     });
+    const modeInput = document.querySelector('input[name="import-mode"]:checked');
+    const uiMode = modeInput ? modeInput.value : "library";
+    const mode = uiMode === "new" ? "master" : "library";
     const btn = document.getElementById("complete-import");
     btn.disabled = true;
+    if (
+      mode === "master" &&
+      state.counts &&
+      Object.values(state.counts).every((n) => n === 0)
+    ) {
+      if (
+        !confirm(
+          "No content was extracted. Continuing will clear enabled master sections. Continue?"
+        )
+      ) {
+        btn.disabled = false;
+        return;
+      }
+    }
     try {
       const resp = await fetch(`/api/imports/${state.token}/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sections }),
+        body: JSON.stringify({ sections, mode }),
       });
       const body = await resp.json();
       if (!resp.ok) throw new Error(body.error || "import failed");
       const noun = body.snippet_count === 1 ? "snippet" : "snippets";
-      showToast(`${body.snippet_count} ${noun} added to your library.`);
+      if (body.mode === "master" && body.master_updated) {
+        showToast(
+          `Master CV updated · ${body.snippet_count} ${noun} added. Open Master CV to review.`
+        );
+      } else {
+        showToast(`${body.snippet_count} ${noun} added to your library.`);
+      }
       state = null;
       setStage("file");
       await loadHistory();
