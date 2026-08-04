@@ -569,8 +569,70 @@ class TestResumeImportApiEndpoints:
         )
         assert confirmed.status_code == 200
         body = confirmed.get_json()
-        assert body.get("mode", "library") == "library"
-        assert body.get("master_updated", False) is False
+        assert body["mode"] == "library"
+        assert body["master_updated"] is False
+        assert cvweb.read_data_text() == before_text
+
+    def test_backup_master_yaml_uses_unique_paths(
+        self, api_app: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Backups created in the same second should never overwrite each other."""
+        from datetime import datetime, timezone
+
+        import cvweb
+
+        class FrozenDatetime:
+            """Provide a stable timestamp for backup collision testing."""
+
+            @classmethod
+            def now(cls, tz: object) -> datetime:
+                """Return the same UTC timestamp for every backup call."""
+                return datetime(2026, 8, 4, 17, 0, 0, tzinfo=timezone.utc)
+
+        monkeypatch.setitem(
+            api_app["_backup_master_yaml"].__globals__, "datetime", FrozenDatetime
+        )
+
+        first = api_app["_backup_master_yaml"]()
+        second = api_app["_backup_master_yaml"]()
+
+        assert first != second
+        assert (cvweb.REPO_ROOT / first).is_file()
+        assert (cvweb.REPO_ROOT / second).is_file()
+
+    def test_confirm_master_backup_failure_preserves_yaml(
+        self,
+        client: "FlaskClient",
+        api_app: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A backup failure should stop master import before data.yaml changes."""
+        from io import BytesIO
+
+        import cvweb
+
+        def fail_backup() -> Path:
+            """Raise the same error shape as a failed filesystem backup."""
+            raise OSError("backup unavailable")
+
+        before_text = cvweb.read_data_text()
+        monkeypatch.setitem(
+            api_app["api_confirm_import"].__globals__, "_backup_master_yaml", fail_backup
+        )
+        uploaded = client.post(
+            "/api/imports",
+            data={"file": (BytesIO(SAMPLE_RESUME_TEXT.encode()), "resume.txt")},
+            content_type="multipart/form-data",
+        )
+        token = uploaded.get_json()["token"]
+
+        confirmed = client.post(
+            f"/api/imports/{token}/confirm",
+            json={"mode": "master"},
+        )
+
+        assert confirmed.status_code == 500
+        assert "backup unavailable" in confirmed.get_json()["error"]
         assert cvweb.read_data_text() == before_text
 
     def test_duplicate_candidates_are_flagged(self, client: "FlaskClient") -> None:

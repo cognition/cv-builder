@@ -779,7 +779,7 @@ def _import_candidates_with_duplicates(
 
 
 def _backup_master_yaml() -> Path:
-    """Write a UTC timestamped backup of data.yaml under data/backups/.
+    """Write a unique UTC timestamped backup of data.yaml under data/backups/.
 
     Returns:
         Path relative to the repo root (posix) for API responses.
@@ -789,10 +789,21 @@ def _backup_master_yaml() -> Path:
     """
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    relative = Path("data") / "backups" / f"data.yaml.{stamp}.bak"
-    absolute = cvweb.REPO_ROOT / relative
-    absolute.write_text(cvweb.read_data_text(), encoding="utf-8")
-    return relative
+    source_text = cvweb.read_data_text()
+    for _ in range(10):
+        relative = (
+            Path("data")
+            / "backups"
+            / f"data.yaml.{stamp}.{secrets.token_hex(4)}.bak"
+        )
+        absolute = cvweb.REPO_ROOT / relative
+        try:
+            with absolute.open("x", encoding="utf-8") as handle:
+                handle.write(source_text)
+        except FileExistsError:
+            continue
+        return relative
+    raise FileExistsError("could not create unique data.yaml backup path")
 
 
 @app.post("/api/imports")
