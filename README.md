@@ -163,3 +163,20 @@ Set `SNIPPETS_DB` to point either server at a different database file
 ```
 python3 -m pytest
 ```
+
+### Cucumber / Behave BDD
+
+Gherkin features under `features/*.feature` describe the shipped CV
+Studio app (shell pages + JSON APIs). They run with
+[Behave](https://behave.readthedocs.io) against the real Flask app via
+its test client (isolated SQLite DB; no wireframe simulation).
+
+The older in-memory wireframe suite lives under `features/wireframe/`
+and is excluded by default (`~@wireframe` in `behave.ini`).
+
+```
+pip install -r requirements.txt
+behave
+# wireframe prototype suite (separate step definitions):
+behave features/wireframe
+```

@@ -30,3 +30,6 @@ cv/web/_rendered.html
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Behave / Cucumber local run dumps
+*.output
