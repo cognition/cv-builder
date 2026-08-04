@@ -1,5 +1,7 @@
 /* Final coherence pass: navigation, hierarchy, controls, and accessibility. */
-:root{--focus:rgba(32,91,68,.16)}
+:root{--ink:#383e3b;--muted:#6b8376;--green:#1d4a3a;--pale:#e6ede9;--lime:#d29b34;--blue:#2b6a84;--gold:#d29b34;--cream:#f8f5ef;--focus:rgba(43,106,132,.18)}
+body{background:var(--cream)}
+.note{background:#1d4a3a;color:#f8f5ef}
 .shell{grid-template-columns:232px minmax(0,1fr)}
 .shell>aside{padding:26px 14px 16px}
 .brand{margin-bottom:24px}
@@ -11,6 +13,7 @@
 .shell nav button:nth-child(7)::before{content:"LIBRARY"}.shell nav button:nth-child(10)::before{content:"SETTINGS"}
 .shell nav button:nth-child(7)::before,.shell nav button:nth-child(10)::before{position:absolute;left:11px;bottom:calc(100% + 6px);color:#929b96;font-size:7px;font-weight:800;letter-spacing:.14em}
 .shell nav button.active{border-color:#d8e5dd;background:#e8f0eb;box-shadow:0 1px 2px #1734270a}
+.shell nav button:hover{color:var(--blue)}
 .shell nav button:focus-visible,.view button:focus-visible,.view input:focus-visible,.view textarea:focus-visible,.view select:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
 main>header{position:sticky;top:0;z-index:15;height:86px;padding-inline:34px;background:rgba(255,255,255,.94);backdrop-filter:blur(10px)}
 .view{max-width:1300px;margin-inline:auto;padding:30px 34px 50px}
@@ -19,6 +22,7 @@ main>header{position:sticky;top:0;z-index:15;height:86px;padding-inline:34px;bac
 button{transition:border-color .15s,background-color .15s,color .15s,box-shadow .15s,transform .15s}
 button:hover{border-color:#b9c9c0}
 .primary:hover{box-shadow:0 5px 14px rgba(78,113,48,.16)}
+.primary{background:var(--gold)!important;color:#252c29!important}.text-button,.link-button,.heading>button:not(.primary){color:var(--blue)}
 .panel,.tip,.asset-card,.question-row,.source-list,.answer-editor,.import-checks,.extracted-sections article{box-shadow:0 1px 2px rgba(24,51,38,.025)}
 .search,.asset-toolbar input,.form input,.form textarea,.answer-editor textarea,.question-toolbar select{background:#fff}
 .asset-toolbar,.question-toolbar{padding-bottom:10px;border-bottom:1px solid #edf0ee}
@@ -28,6 +32,10 @@ button:hover{border-color:#b9c9c0}
 .resume-drop{max-width:920px;width:100%;margin-inline:auto}
 .import-options{max-width:920px}
 .mcp-hero,.hero{box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
+.mcp-hero,.hero{background:linear-gradient(115deg,var(--green) 0%,#245b60 62%,var(--blue) 100%)}
+.status.ready,.q-status.complete{background:#e6ede9;color:var(--green)}.status.draft,.q-status.progress{background:#f7ead1;color:#825c17}
+.score-ring{border-color:#6a939d;color:var(--blue)}
+.segmented button.active,.level-tabs button.active,.asset-tabs button.active,.question-tabs button.active{color:var(--blue)}
 .stats{border:1px solid #edf0ee}
 .saved{display:flex;align-items:center;gap:5px}
 @media(max-width:900px){.shell{grid-template-columns:70px minmax(0,1fr)}.shell nav::before,.shell nav button::before{display:none!important}.shell nav button:nth-child(7),.shell nav button:nth-child(10){margin-top:5px}.view,main>header{padding-inline:20px}}
