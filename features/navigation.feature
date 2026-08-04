@@ -1,8 +1,10 @@
 @app @shell
 Feature: CV Studio navigation shell
-  As a candidate using the shipped app
+  As a candidate using CV Studio
   I want a persistent left-hand navigation
   So that I can move between the main areas of the product
+
+  # Informed by the wireframe shell; asserted against the shipped app.
 
   Background:
     Given the CV Studio app is running
@@ -42,3 +44,7 @@ Feature: CV Studio navigation shell
       | assets            | assets    | Assets           |
       | versions          | versions  | Versions         |
       | connect ai        | connect   | Connect AI       |
+
+  Scenario: The brand link points home
+    When I open the "content library" page
+    Then the page has an element matching "a.brand[href='/cv/web/']"

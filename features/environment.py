@@ -1,4 +1,9 @@
-"""Behave environment — real CV Studio Flask app (not the wireframe)."""
+"""Behave environment — real CV Studio Flask app only.
+
+The interactive wireframe (``cv/web/wireframe.html``) informs which
+behaviours the Gherkin features should cover. It is never the system
+under test.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +21,7 @@ SRC = REPO_ROOT / "src"
 
 
 def before_all(context: Any) -> None:
-    """Boot serve-editor against the real repo, with an isolated SQLite DB."""
+    """Boot serve-editor against the real repo, with isolated scratch paths."""
     for path in (str(SCRIPTS), str(SRC), str(REPO_ROOT / "features" / "steps")):
         if path not in sys.path:
             sys.path.insert(0, path)
@@ -24,7 +29,18 @@ def before_all(context: Any) -> None:
     context.repo_root = REPO_ROOT
     context._bdd_tmpdir = Path(tempfile.mkdtemp(prefix="cvbuilder-bdd-"))
     db_path = context._bdd_tmpdir / "snippets.db"
+    imports_dir = context._bdd_tmpdir / "imports"
+    imports_dir.mkdir(parents=True, exist_ok=True)
     os.environ["SNIPPETS_DB"] = str(db_path)
+    os.environ["RESUME_IMPORTS_DIR"] = str(imports_dir)
+
+    # Isolate master CV + backups so mode=master confirm cannot mutate repo data.yaml.
+    data_copy = context._bdd_tmpdir / "data.yaml"
+    shutil.copy2(REPO_ROOT / "cv" / "web" / "data.yaml", data_copy)
+    backups_dir = context._bdd_tmpdir / "backups"
+    backups_dir.mkdir(parents=True, exist_ok=True)
+    context._bdd_data_file = data_copy
+    context._bdd_backups_dir = backups_dir
 
     # Variants must stay under the real repo root so relative_to(REPO_ROOT) works.
     variants_dir = REPO_ROOT / "cv" / "variants" / "_behave_tmp"
@@ -37,6 +53,8 @@ def before_all(context: Any) -> None:
     namespace = runpy.run_path(str(SCRIPTS / "serve-editor.py"))
 
     namespace["VARIANTS_DIR"] = variants_dir
+    namespace["IMPORTS_DIR"] = imports_dir
+    namespace["STAGING_DIR"] = imports_dir / "staging"
     for func_name in (
         "home_page",
         "_list_variants",
@@ -44,10 +62,19 @@ def before_all(context: Any) -> None:
         "api_delete_variant_folder",
         "api_render_variant",
         "api_compose",
+        "api_upload_import",
+        "api_confirm_import",
+        "api_discard_staged_import",
+        "api_list_imports",
+        "api_download_import_source",
+        "api_delete_import",
+        "_staged_import_path",
     ):
         func = namespace.get(func_name)
         if func is not None:
             func.__globals__["VARIANTS_DIR"] = variants_dir
+            func.__globals__["IMPORTS_DIR"] = imports_dir
+            func.__globals__["STAGING_DIR"] = imports_dir / "staging"
 
     original_composer = namespace["CvComposer"]
 
@@ -73,6 +100,17 @@ def before_all(context: Any) -> None:
     namespace["CvComposer"] = _IsolatedComposer
     namespace["api_compose"].__globals__["CvComposer"] = _IsolatedComposer
 
+    import cvweb
+
+    cvweb.DATA_FILE = data_copy
+    namespace["BACKUPS_DIR"] = backups_dir
+    confirm = namespace.get("api_confirm_import")
+    if confirm is not None:
+        confirm.__globals__["BACKUPS_DIR"] = backups_dir
+    backup_fn = namespace.get("_backup_master_yaml")
+    if backup_fn is not None:
+        backup_fn.__globals__["BACKUPS_DIR"] = backups_dir
+
     app = namespace["app"]
     app.config["TESTING"] = True
     context.app_ns = namespace
@@ -87,7 +125,7 @@ def before_all(context: Any) -> None:
 
 
 def before_scenario(context: Any, scenario: Any) -> None:
-    """Reset per-scenario response state."""
+    """Reset per-scenario state; skip wireframe-informed backlog (@wip)."""
     context.response = None
     context.response_json = None
     context.last_response = None
@@ -97,10 +135,17 @@ def before_scenario(context: Any, scenario: Any) -> None:
     context.created_snippet_id = None
     context.created_source_id = None
     context.compose_name = None
+    context.import_token = None
+    context.import_id = None
+
+    if "wip" in scenario.effective_tags:
+        scenario.skip(
+            "Wireframe-informed backlog — not yet asserted against the shipped app"
+        )
 
 
 def after_all(context: Any) -> None:
-    """Remove temporary BDD database and variant scratch directories."""
+    """Remove temporary BDD database, imports, and variant scratch directories."""
     tmp = getattr(context, "_bdd_tmpdir", None)
     if tmp is not None and Path(tmp).exists():
         shutil.rmtree(tmp, ignore_errors=True)

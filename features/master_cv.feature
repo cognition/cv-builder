@@ -1,13 +1,13 @@
 @app @master
-Feature: Master CV editor
+Feature: Master CV
   As a candidate
-  I want to open the in-place master CV editor
-  So that I can edit the source document used for exports
+  I want a complete source CV
+  So that tailored versions can start from a single foundation
 
   Background:
     Given the CV Studio app is running
 
-  Scenario: Master CV editor is reachable
+  Scenario: Master CV opens the editable source document
     When I open the "master cv" page
     Then the response status is 200
     And the Master CV editor document is present
