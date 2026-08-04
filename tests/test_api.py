@@ -498,6 +498,81 @@ class TestResumeImportApiEndpoints:
         skills = client.get("/api/snippets?category=skill&tag=import")
         assert len(skills.get_json()) == 3
 
+    def test_confirm_master_mode_updates_yaml_and_preserves_person(
+        self, client: "FlaskClient"
+    ) -> None:
+        from io import BytesIO
+
+        import cvweb
+
+        before = cvweb.load_data()
+        original_first = before["person"]["first_name"]
+
+        uploaded = client.post(
+            "/api/imports",
+            data={"file": (BytesIO(SAMPLE_RESUME_TEXT.encode()), "resume.txt")},
+            content_type="multipart/form-data",
+        )
+        token = uploaded.get_json()["token"]
+        confirmed = client.post(
+            f"/api/imports/{token}/confirm",
+            json={"mode": "master"},
+        )
+        assert confirmed.status_code == 200
+        body = confirmed.get_json()
+        assert body["mode"] == "master"
+        assert body["master_updated"] is True
+        assert body["snippet_count"] > 0
+        assert body["backup_path"].startswith("data/backups/data.yaml.")
+        assert (cvweb.REPO_ROOT / body["backup_path"]).is_file()
+
+        after = cvweb.load_data()
+        assert after["person"]["first_name"] == original_first
+        assert after["bio"]  # non-empty from SAMPLE_RESUME_TEXT summary
+        assert after["experience"]
+        assert after["experience"][0]["company"] or after["experience"][0]["role"]
+        skills = client.get("/api/snippets?tag=import")
+        assert len(skills.get_json()) == body["snippet_count"]
+
+    def test_confirm_invalid_mode_returns_400(self, client: "FlaskClient") -> None:
+        from io import BytesIO
+
+        uploaded = client.post(
+            "/api/imports",
+            data={"file": (BytesIO(SAMPLE_RESUME_TEXT.encode()), "resume.txt")},
+            content_type="multipart/form-data",
+        )
+        token = uploaded.get_json()["token"]
+        resp = client.post(
+            f"/api/imports/{token}/confirm",
+            json={"mode": "compare"},
+        )
+        assert resp.status_code == 400
+
+    def test_confirm_library_mode_default_does_not_touch_master(
+        self, client: "FlaskClient"
+    ) -> None:
+        from io import BytesIO
+
+        import cvweb
+
+        before_text = cvweb.read_data_text()
+        uploaded = client.post(
+            "/api/imports",
+            data={"file": (BytesIO(SAMPLE_RESUME_TEXT.encode()), "resume.txt")},
+            content_type="multipart/form-data",
+        )
+        token = uploaded.get_json()["token"]
+        confirmed = client.post(
+            f"/api/imports/{token}/confirm",
+            json={},
+        )
+        assert confirmed.status_code == 200
+        body = confirmed.get_json()
+        assert body.get("mode", "library") == "library"
+        assert body.get("master_updated", False) is False
+        assert cvweb.read_data_text() == before_text
+
     def test_duplicate_candidates_are_flagged(self, client: "FlaskClient") -> None:
         from io import BytesIO
 

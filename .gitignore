@@ -20,6 +20,7 @@ data/edit-history.json
 
 # Uploaded resume files (personal documents, not repo content)
 data/imports/
+data/backups/
 
 # Generated CV output (regenerate with generate-cv-web.py / the builder UI)
 cv/current/*.pdf

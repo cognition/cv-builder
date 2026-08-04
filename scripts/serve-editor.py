@@ -48,6 +48,7 @@ from cvbuilder.models import (
     SnippetVariant,
 )
 from cvbuilder.question_extractor import extract_questions
+from cvbuilder.resume_to_master import apply_resume_to_master
 from cvbuilder.resume_extractor import (
     SUPPORTED_EXTENSIONS,
     build_candidates,
@@ -102,8 +103,10 @@ IMPORTS_DIR = Path(
     os.environ.get("RESUME_IMPORTS_DIR", str(cvweb.REPO_ROOT / "data" / "imports"))
 )
 STAGING_DIR = IMPORTS_DIR / "staging"
+BACKUPS_DIR = cvweb.REPO_ROOT / "data" / "backups"
 MAX_IMPORT_BYTES = 25 * 1024 * 1024
 IMPORT_SECTIONS = ("profile", "experience", "skills", "education")
+IMPORT_MODES = frozenset({"library", "master"})
 IMPORT_FILE_TYPES = {
     ".pdf": "pdf",
     ".docx": "docx",
@@ -775,6 +778,23 @@ def _import_candidates_with_duplicates(
     return candidates
 
 
+def _backup_master_yaml() -> Path:
+    """Write a UTC timestamped backup of data.yaml under data/backups/.
+
+    Returns:
+        Path relative to the repo root (posix) for API responses.
+
+    Raises:
+        OSError: If the backup directory or file cannot be written.
+    """
+    BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    relative = Path("data") / "backups" / f"data.yaml.{stamp}.bak"
+    absolute = cvweb.REPO_ROOT / relative
+    absolute.write_text(cvweb.read_data_text(), encoding="utf-8")
+    return relative
+
+
 @app.post("/api/imports")
 def api_upload_import() -> Any:
     """Stage an uploaded resume file and return its parsed preview.
@@ -822,6 +842,9 @@ def api_confirm_import(token: str) -> Any:
     if staged is None:
         return jsonify(error="import not found or already confirmed"), 404
     payload = request.get_json(force=True) or {}
+    mode = payload.get("mode") or "library"
+    if mode not in IMPORT_MODES:
+        return jsonify(error="unsupported import mode"), 400
     requested_sections = payload.get("sections")
     enabled = (
         {name for name in IMPORT_SECTIONS if requested_sections.get(name, True)}
@@ -834,6 +857,17 @@ def api_confirm_import(token: str) -> Any:
         resume = parse_resume(extract_text(original_name, staged.read_bytes()))
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
+
+    backup_rel: Optional[Path] = None
+    if mode == "master":
+        before = cvweb.read_data_text()
+        try:
+            backup_rel = _backup_master_yaml()
+        except OSError as exc:
+            return jsonify(error=str(exc)), 500
+        patched = apply_resume_to_master(cvweb.load_data(), resume, enabled)
+        _history().push_before_change("import-master", text=before)
+        cvweb.save_data(patched)
 
     database = _database()
     created = 0
@@ -867,7 +901,16 @@ def api_confirm_import(token: str) -> Any:
             snippet_count=created,
         )
     )
-    return jsonify(id=import_id, filename=original_name, snippet_count=created)
+    result = {
+        "id": import_id,
+        "filename": original_name,
+        "snippet_count": created,
+        "mode": mode,
+        "master_updated": mode == "master",
+    }
+    if mode == "master" and backup_rel is not None:
+        result["backup_path"] = backup_rel.as_posix()
+    return jsonify(**result)
 
 
 @app.delete("/api/imports/staging/<token>")
