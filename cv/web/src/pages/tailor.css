@@ -1,0 +1,151 @@
+.hint { color: var(--muted); font-size: 11px; }
+
+/* ---------- step 1: job details ---------- */
+
+.two-col {
+  display: grid;
+  grid-template-columns: minmax(500px, 740px) 260px;
+  gap: 20px;
+  margin-bottom: 34px;
+}
+
+.form { padding: 28px; }
+
+.panel-head { display: flex; gap: 12px; }
+.panel-head > b {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--pale);
+  color: var(--green);
+  font-style: normal;
+}
+.panel-head h2 { margin: 0; font-size: 18px; }
+.panel-head p { margin: 2px 0 0; color: var(--muted); font-size: 11px; }
+
+.form label { margin-top: 16px; }
+.form label:first-of-type { margin-top: 20px; }
+.form input, .form textarea { margin-top: 6px; }
+.form textarea { min-height: 150px; resize: vertical; }
+
+.form footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.tailor-actions { display: flex; align-items: end; gap: 8px; }
+.tailor-actions label { display: flex; flex-direction: column; gap: 3px; margin: 0; font-size: 9px; }
+.tailor-actions input { width: 4.5rem; margin: 0; }
+.tailor-actions button { white-space: nowrap; }
+
+.tip {
+  align-self: start;
+  padding: 23px;
+  background: #f6f8f2;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+}
+.tip > b {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--gold);
+  font-style: normal;
+}
+.tip h3 { margin: 16px 0 6px; }
+.tip p { color: var(--muted); font-size: 11px; }
+
+/* ---------- step 2: choose content ---------- */
+
+.library-filters { display: flex; gap: 8px; }
+.library-filters input { width: 220px; }
+.library-filters select { width: auto; min-width: 130px; }
+
+.work {
+  display: grid;
+  grid-template-columns: minmax(500px, 1fr) 300px;
+  gap: 17px;
+  align-items: start;
+}
+
+.work > .panel { padding: 20px; }
+
+.suggestion {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: start;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.suggestion:first-child { margin-top: 0; }
+.suggestion.selected { border-color: #8cad99; background: #f8fbf9; }
+.suggestion input[type="checkbox"] { width: 16px; height: 16px; margin-top: 3px; accent-color: var(--green); }
+.suggestion h3 { margin: 0 0 3px; font-size: 12px; }
+.suggestion p { margin: 0 0 6px; color: var(--muted); font-size: 10px; }
+.suggestion .match-terms { color: var(--blue); font-size: 9px; }
+.suggestion .row-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.suggestion select { width: auto; padding: 4px 6px; font-size: 9px; }
+
+/* ---------- summary / draft panel ---------- */
+
+.summary { position: sticky; top: 102px; padding: 20px; }
+.summary > small { color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .1em; }
+
+.metric {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 0;
+  border-block: 1px solid var(--line);
+}
+.metric > b { font-size: 24px; }
+.metric span, .metric small { display: block; font-size: 10px; }
+.metric small { color: var(--muted); }
+
+.draft-list {
+  list-style: none;
+  margin: 10px 0;
+  padding: 0;
+  max-height: 320px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.draft-item {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.draft-item h3 { margin: 0 0 4px; font-size: 11px; }
+.draft-item .meta { display: flex; gap: 5px; margin-bottom: 5px; }
+.draft-item .preview-text {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 10px;
+  max-height: 3.5rem;
+  overflow: auto;
+}
+.draft-item .card-actions { display: flex; gap: 4px; }
+.draft-item .card-actions button { padding: 3px 7px; font-size: 10px; }
+
+.summary > button.primary { width: 100%; margin-top: 4px; }
+
+@media (max-width: 1050px) {
+  .two-col, .work { grid-template-columns: 1fr; }
+  .tip { display: none; }
+  .summary { position: static; }
+}

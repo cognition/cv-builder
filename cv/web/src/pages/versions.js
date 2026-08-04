@@ -1,25 +1,23 @@
 (function () {
   "use strict";
 
-  const body = document.getElementById("variants-body");
-  const statusEl = document.getElementById("variants-status");
-  const btnRefresh = document.getElementById("btn-refresh");
+  const list = document.getElementById("version-list");
+  const statusEl = document.getElementById("versions-status");
   const previewPane = document.getElementById("preview-pane");
   const previewFrame = document.getElementById("preview-frame");
+  const toast = document.getElementById("toast");
 
-  /**
-   * Update the status line.
-   * @param {string} message
-   */
   function setStatus(message) {
     statusEl.textContent = message;
   }
 
-  /**
-   * Escape text for safe HTML insertion.
-   * @param {string} value
-   * @returns {string}
-   */
+  function showToast(message) {
+    toast.textContent = message;
+    toast.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove("show"), 2100);
+  }
+
   function escapeHtml(value) {
     return String(value)
       .replace(/&/g, "&amp;")
@@ -28,56 +26,52 @@
       .replace(/"/g, "&quot;");
   }
 
-  /**
-   * Format an ISO timestamp for display.
-   * @param {string|null} iso
-   * @returns {string}
-   */
   function formatWhen(iso) {
     if (!iso) return "—";
     try {
-      return new Date(iso).toLocaleString();
+      return new Date(iso).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
     } catch (_err) {
       return iso;
     }
   }
 
-  /**
-   * Load and render the variants table.
-   * @returns {Promise<void>}
-   */
   async function loadVariants() {
-    setStatus("Loading variants…");
+    setStatus("Loading…");
     const resp = await fetch("/api/variants");
     if (!resp.ok) throw new Error("failed to load variants");
     const variants = await resp.json();
-    body.innerHTML = "";
+    list.innerHTML = "";
     if (!variants.length) {
-      body.innerHTML =
-        '<tr><td colspan="4" class="empty">No composed variants yet. Use the builder to create one.</td></tr>';
-      setStatus("No variants.");
+      list.innerHTML =
+        '<p class="empty-row">No composed versions yet. <a href="/cv/web/build">Tailor a new CV</a> to create one.</p>';
+      setStatus("No versions.");
       return;
     }
     variants.forEach((item) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td><strong>${escapeHtml(item.name)}</strong><br>
-          <small>${escapeHtml(item.data_yaml || "")}</small></td>
-        <td>${escapeHtml(formatWhen(item.updated_at))}</td>
-        <td>${item.pdf ? escapeHtml(item.pdf) : "—"}</td>
-        <td class="row-actions">
+      const row = document.createElement("div");
+      row.className = "version-row";
+      row.innerHTML = `
+        <label class="pill ${item.pdf ? "" : "draft"}">${item.pdf ? "READY" : "DRAFT"}</label>
+        <div>
+          <b>${escapeHtml(item.name)}</b><br>
+          <span class="meta">Updated ${escapeHtml(formatWhen(item.updated_at))}</span>
+        </div>
+        <div class="row-actions">
           <button type="button" data-action="preview" ${item.pdf ? "" : "disabled"}>Preview</button>
           <button type="button" data-action="render">Re-render</button>
           <button type="button" data-action="delete">Delete</button>
-        </td>
+        </div>
       `;
-      tr.querySelectorAll("button").forEach((btn) => {
+      row.querySelectorAll("button").forEach((btn) => {
         btn.addEventListener("click", () => {
           const action = btn.getAttribute("data-action");
           if (action === "preview") {
             previewPane.classList.add("open");
             previewFrame.src = "/" + item.pdf + "?t=" + Date.now();
-            setStatus(`Previewing ${item.name}.`);
           } else if (action === "render") {
             renderVariant(item.name).catch((err) => setStatus("Error: " + err.message));
           } else if (action === "delete") {
@@ -85,16 +79,11 @@
           }
         });
       });
-      body.appendChild(tr);
+      list.appendChild(row);
     });
-    setStatus(`${variants.length} variant(s).`);
+    setStatus(`${variants.length} version(s).`);
   }
 
-  /**
-   * Re-render a variant PDF from its data.yaml.
-   * @param {string} name
-   * @returns {Promise<void>}
-   */
   async function renderVariant(name) {
     setStatus(`Rendering ${name}…`);
     const resp = await fetch(
@@ -108,28 +97,19 @@
       previewFrame.src = "/" + result.pdf + "?t=" + Date.now();
     }
     await loadVariants();
-    setStatus(`Re-rendered ${name}.`);
+    showToast(`Re-rendered ${name}.`);
   }
 
-  /**
-   * Delete a composed variant directory after confirmation.
-   * @param {string} name
-   * @returns {Promise<void>}
-   */
   async function deleteVariant(name) {
-    if (!confirm(`Delete variant “${name}”? This removes its folder.`)) return;
+    if (!confirm(`Delete version “${name}”? This removes its folder.`)) return;
     const resp = await fetch("/api/variants/" + encodeURIComponent(name), {
       method: "DELETE",
     });
     const result = await resp.json();
     if (!resp.ok) throw new Error(result.error || "delete failed");
     await loadVariants();
-    setStatus(`Deleted ${name}.`);
+    showToast(`Deleted ${name}.`);
   }
-
-  btnRefresh.addEventListener("click", () => {
-    loadVariants().catch((err) => setStatus("Error: " + err.message));
-  });
 
   loadVariants().catch((err) => setStatus("Error: " + err.message));
 })();

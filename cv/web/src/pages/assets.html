@@ -1,0 +1,77 @@
+{% extends "shell/base.html" %}
+{% block title %}CV Studio — Assets{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/cv/web/src/pages/assets.css">{% endblock %}
+{% block header_actions %}<button type="button" class="primary" id="upload-trigger">+ Add asset</button>{% endblock %}
+{% block content %}
+<div class="view active">
+  <div class="heading">
+    <div>
+      <h2>Asset library</h2>
+      <p>Photos, logos, and contact icons you can reuse across CVs.</p>
+    </div>
+  </div>
+  <div class="asset-summary">
+    <div><b id="asset-count">0</b><span>Saved assets</span></div>
+    <div><b>8</b><span>Built-in icons</span></div>
+    <p>Supported: PNG, JPG, SVG, WebP, GIF, ICO &middot; Up to 10 MB</p>
+  </div>
+  <div class="asset-toolbar">
+    <div class="asset-tabs">
+      <button class="active" data-asset-filter="all">All</button>
+      <button data-asset-filter="photo">Photos</button>
+      <button data-asset-filter="logo">Logos</button>
+      <button data-asset-filter="icon">Contact icons</button>
+    </div>
+    <input id="asset-search" placeholder="Search assets…">
+  </div>
+  <div class="asset-layout">
+    <div>
+      <div class="asset-section-head"><h3>Your assets</h3><span>Click an asset to select it</span></div>
+      <div class="asset-grid" id="personal-assets"></div>
+      <div class="asset-section-head built-in-head"><h3>Common contact icons</h3><span>Ready to use — no upload required</span></div>
+      <div class="asset-grid icon-grid" id="icon-assets"></div>
+    </div>
+    <aside class="asset-inspector">
+      <div class="inspector-empty" id="inspector-empty">
+        <span>&#9678;</span>
+        <h3>Select an asset</h3>
+        <p>Preview it, then use it as your profile photo.</p>
+      </div>
+      <div class="inspector-detail" id="inspector-detail">
+        <span class="asset-preview" id="inspector-preview"></span>
+        <h3 id="inspector-name"></h3>
+        <p id="inspector-meta"></p>
+        <button class="primary" id="use-asset">Use as profile photo</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="asset-modal">
+  <div class="modal-dialog asset-dialog">
+    <div class="drawer-head">
+      <div><small>ADD TO YOUR LIBRARY</small><h2>Add a photo or logo</h2></div>
+      <button type="button" id="close-asset-modal">&times;</button>
+    </div>
+    <div class="source-tabs">
+      <button class="active" data-source="upload">Upload file</button>
+      <button data-source="url">From URL</button>
+    </div>
+    <div class="source-panel active" id="source-upload">
+      <div class="drop-zone" id="drop-zone">
+        <span>&#8679;</span>
+        <h3>Drop an image here</h3>
+        <p>or choose a file from your computer</p>
+        <button type="button" id="choose-file">Choose file</button>
+        <input type="file" id="asset-file" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif">
+      </div>
+    </div>
+    <div class="source-panel" id="source-url">
+      <label>Image URL<input id="asset-url" placeholder="https://example.com/logo.svg"></label>
+      <p>The image will be copied into your local asset library.</p>
+      <button type="button" class="primary" id="import-url">Import image</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_body %}<script src="/cv/web/src/pages/assets.js"></script>{% endblock %}

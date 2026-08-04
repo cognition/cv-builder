@@ -318,13 +318,13 @@ body.edit-mode .content {
   bottom: 0;
   left: 0;
   right: 0;
-  background: #1c1f24;
+  background: #1d4a3a;
   color: #fff;
   padding: 0.15in 0.3in;
   display: flex;
   align-items: center;
   gap: 0.2in;
-  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: Inter, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: 9.5pt;
   z-index: 1000;
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
@@ -336,11 +336,12 @@ body.edit-mode .content {
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  background: var(--steel);
-  color: #fff;
+  background: #d29b34;
+  color: #252c29;
+  font-weight: 700;
 }
 
-#editor-toolbar button:hover { background: var(--navy); }
+#editor-toolbar button:hover { background: #c68d24; }
 #editor-toolbar button:disabled { opacity: 0.5; cursor: default; }
 
 #editor-status { flex: 1 1 auto; opacity: 0.85; }
@@ -523,7 +524,7 @@ body.edit-mode .struct-btn:hover {
 }
 
 #editor-toolbar .editor-links a {
-  color: #cde;
+  color: #d7e3dc;
   text-decoration: none;
 }
 

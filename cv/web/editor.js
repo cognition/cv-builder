@@ -1358,13 +1358,14 @@
     refreshHistoryButtons();
   }
 
-  // Link to builder / variants from the toolbar.
+  // Link back to the rest of the app from the toolbar.
   const toolbar = document.getElementById("editor-toolbar");
   if (toolbar) {
     const links = document.createElement("span");
     links.className = "editor-links";
     links.innerHTML =
-      '<a href="/cv/web/build">Builder</a> · <a href="/cv/web/variants">Variants</a> · ' +
+      '<a href="/cv/web/">Home</a> · <a href="/cv/web/build">Tailor</a> · ' +
+      '<a href="/cv/web/library">Library</a> · <a href="/cv/web/variants">Versions</a> · ' +
       '<a href="/cv/web/docs">How to use</a>';
     toolbar.appendChild(links);
   }

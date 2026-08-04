@@ -1,0 +1,67 @@
+{% extends "shell/base.html" %}
+{% block title %}CV Studio — Connect AI{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/cv/web/src/pages/connect.css">{% endblock %}
+{% block content %}
+<div class="view active">
+  <div class="mcp-hero">
+    <div>
+      <em>OPTIONAL INTEGRATION</em>
+      <h2>Use your CV library from an AI assistant.</h2>
+      <p>MCP lets a compatible assistant search snippets, match postings, and create CV versions through conversation — entirely on this computer.</p>
+    </div>
+  </div>
+
+  <div class="mcp-layout">
+    <div>
+      <div class="heading"><div><h2>Connect in three steps</h2><p>Your files remain on this computer.</p></div></div>
+      <ol class="setup-steps">
+        <li>
+          <b>1</b>
+          <div>
+            <h3>Start CV Studio</h3>
+            <p>Docker starts the interface and the MCP server together.</p>
+            <div class="code-row"><code>docker compose up --build</code><button type="button" class="copy" data-copy="docker compose up --build">Copy</button></div>
+          </div>
+        </li>
+        <li>
+          <b>2</b>
+          <div>
+            <h3>Add it to your assistant</h3>
+            <p>For Claude Code, run this command once (adjust the path to where you cloned <code>cv-builder</code>).</p>
+            <div class="code-row"><code>claude mcp add cv-builder -- python3 /absolute/path/to/cv-builder/scripts/mcp-server.py</code><button type="button" class="copy" data-copy="claude mcp add cv-builder -- python3 /absolute/path/to/cv-builder/scripts/mcp-server.py">Copy</button></div>
+            <details>
+              <summary>Using Docker's HTTP transport instead?</summary>
+              <p>Connect to <code>http://127.0.0.1:8765/mcp</code> with Streamable HTTP, or point another MCP client at the local Python script as a stdio server.</p>
+            </details>
+          </div>
+        </li>
+        <li>
+          <b>3</b>
+          <div>
+            <h3>Try a request</h3>
+            <p>Your assistant can use the CV tools whenever you ask.</p>
+            <div class="prompt-card">
+              <span>EXAMPLE PROMPT</span>
+              <p>&ldquo;Match my experience to this job posting, show the strongest snippets, then create a draft named platform-manager.&rdquo;</p>
+              <button type="button" class="copy" data-copy="Match my experience to this job posting, show the strongest snippets, then create a draft named platform-manager.">Copy prompt</button>
+            </div>
+          </div>
+        </li>
+      </ol>
+    </div>
+    <aside class="mcp-side">
+      <h3>What can the assistant do?</h3>
+      <ul>
+        <li><b>Search your library</b><span>Find experience by skill, company, or keyword.</span></li>
+        <li><b>Match a job posting</b><span>Rank evidence against requirements.</span></li>
+        <li><b>Build a CV version</b><span>Compose snippets at the right detail level.</span></li>
+        <li><b>Manage drafts</b><span>Save, load, and revise selections.</span></li>
+      </ul>
+      <div class="permission-note"><b>You stay in control</b><p>Nothing is written until you ask the assistant to create or change a version.</p></div>
+      <button type="button" id="test-mcp">Test HTTP connection</button>
+      <div id="test-result"></div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+{% block extra_body %}<script src="/cv/web/src/pages/connect.js"></script>{% endblock %}

@@ -13,8 +13,9 @@ Nothing in this repo is anyone's real personal data.
 ## Layout
 
 - `cv/web/` — HTML/CSS CV source (`data.yaml`, `template.html.j2`,
-  `style.css`) and the browser UI (`editor.js`, `builder.js`, `variants.js`
-  + their `.html`/`.css`)
+  `style.css`, `editor.js`) and the app UI (`cv/web/src/`: shared shell
+  + design tokens in `shell/` and `theme.css`, one Jinja page + CSS/JS
+  per app-chrome route under `pages/`)
 - `content/` — optional additional detail for the snippet library, as
   markdown alongside `data.yaml`:
   - `work-experience/` — one file per employer (`category: experience`,
@@ -49,18 +50,29 @@ Requires `google-chrome` or `chromium` on PATH for PDF export
 
 ### Editing in the browser
 
-`scripts/serve-editor.py` serves three pages:
+`scripts/serve-editor.py` serves one app, sharing a common nav/header
+shell (`cv/web/src/shell/`) across every page below except `/cv/web/edit`,
+which renders the CV document itself:
 
+- **`/cv/web/`** — Home dashboard: live snippet/version counts and
+  recent versions.
 - **`/cv/web/edit`** — click any text to edit it in place; hover controls
   add/reorder/delete list items (bullets, skills, jobs, subsections,
   education, custom side panels); Save & Preview renders a real PDF.
   Adding a skill/bio paragraph/education entry opens a picker fed from
   the snippet database, with search and duplicate flagging.
-- **`/cv/web/build`** — browse/filter the snippet library, paste a job
-  posting to re-rank snippets by keyword match, assemble an ordered draft,
+- **`/cv/web/build`** ("Tailor") — paste a job posting to re-rank
+  snippets by keyword match, choose content, assemble an ordered draft,
   and compose it into a new named variant under `cv/variants/<name>/`.
-- **`/cv/web/variants`** — preview, re-render, or delete composed variant
-  folders.
+- **`/cv/web/library`** ("Content library") — browse/search/filter every
+  snippet, switch between its brief/standard/detailed variants, and
+  create/edit/delete snippets or re-seed the database from source files.
+- **`/cv/web/variants`** ("Versions") — preview, re-render, or delete
+  composed variant folders.
+- **`/cv/web/assets`** — browse/upload photos and logos (backed by the
+  `/api/images*` endpoints) and reference the built-in contact icons.
+- **`/cv/web/connect`** ("Connect AI") — MCP setup instructions and an
+  optional local connectivity check.
 
 ### Docker
 
@@ -69,9 +81,13 @@ repo bind-mounted so edits land on the host:
 
 ```
 docker compose up --build
+# home:     http://127.0.0.1:5057/cv/web/
 # editor:   http://127.0.0.1:5057/cv/web/edit
-# builder:  http://127.0.0.1:5057/cv/web/build
+# tailor:   http://127.0.0.1:5057/cv/web/build
+# library:  http://127.0.0.1:5057/cv/web/library
 # variants: http://127.0.0.1:5057/cv/web/variants
+# assets:   http://127.0.0.1:5057/cv/web/assets
+# connect:  http://127.0.0.1:5057/cv/web/connect
 # MCP:      http://127.0.0.1:8765/mcp  (streamable-http)
 ```
 
@@ -129,6 +145,7 @@ Set `SNIPPETS_DB` to point either server at a different database file
 
 ## API endpoints (same Flask process as the editor)
 
+- `GET /api/person` — read-only `person` block of `data.yaml` (Assets page)
 - `GET/POST/PUT/DELETE /api/snippets` — list/create/update/delete snippets
 - `DELETE /api/snippets/<id>/variants/<level>` — remove one detail level
 - `POST /api/structure` — insert/delete/move/replace items in `data.yaml`
