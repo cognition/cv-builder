@@ -38,7 +38,8 @@ from cvbuilder.composer import CvComposer
 from cvbuilder.database import SnippetDatabase
 from cvbuilder.importer import SnippetImporter
 from cvbuilder.matcher import SnippetMatcher
-from cvbuilder.models import DetailLevel, Snippet, SnippetVariant
+from cvbuilder.models import DetailLevel, Question, QuestionSource, Snippet, SnippetVariant
+from cvbuilder.question_extractor import extract_questions
 
 from flask import Flask, jsonify, request, send_from_directory
 from jinja2 import (
@@ -193,6 +194,17 @@ def build_page() -> str:
     """Serve the tailor flow: paste a posting, choose content, compose a version."""
     return _render_page(
         "pages/tailor.html", crumb="NEW TAILORED CV", title="Tell us about the role", active="tailor"
+    )
+
+
+@app.get("/cv/web/questions")
+def questions_page() -> str:
+    """Serve the application-questions page (sources, questions, answers)."""
+    return _render_page(
+        "pages/questions.html",
+        crumb="QUESTIONS",
+        title="Build evidence-backed answers",
+        active="questions",
     )
 
 
@@ -529,6 +541,172 @@ def api_seed() -> Any:
     importer = SnippetImporter(database=database, repo_root=cvweb.REPO_ROOT)
     stats = importer.seed()
     return jsonify(stats)
+
+
+_QUESTION_SOURCE_TYPES = {"job", "form", "matrix"}
+
+
+@app.get("/api/question-sources")
+def api_list_question_sources() -> Any:
+    """List all application-question sources with their question counts."""
+    database = _database()
+    sources = database.list_question_sources()
+    questions_by_source: dict[int, int] = {}
+    for question in database.list_questions():
+        questions_by_source[question.source_id] = (
+            questions_by_source.get(question.source_id, 0) + 1
+        )
+    return jsonify(
+        [
+            {**source.to_dict(), "question_count": questions_by_source.get(source.id, 0)}
+            for source in sources
+        ]
+    )
+
+
+@app.post("/api/question-sources")
+def api_create_question_source() -> Any:
+    """Create a question source, optionally extracting questions from pasted text."""
+    payload = request.get_json(force=True) or {}
+    title = str(payload.get("title", "")).strip()
+    source_type = str(payload.get("source_type", "form"))
+    if not title:
+        return jsonify(error="title is required"), 400
+    if source_type not in _QUESTION_SOURCE_TYPES:
+        return jsonify(error="source_type must be one of: " + ", ".join(sorted(_QUESTION_SOURCE_TYPES))), 400
+    database = _database()
+    source_id = database.create_question_source(
+        QuestionSource(title=title, source_type=source_type)
+    )
+    text = str(payload.get("text", ""))
+    created_ids: list[int] = []
+    if text.strip():
+        for prompt in extract_questions(text, source_type):
+            created_ids.append(
+                database.create_question(Question(source_id=source_id, prompt=prompt))
+            )
+    source = database.get_question_source(source_id)
+    return jsonify(
+        {**source.to_dict(), "question_count": len(created_ids)}
+    ), 201
+
+
+@app.delete("/api/question-sources/<int:source_id>")
+def api_delete_question_source(source_id: int) -> Any:
+    """Delete a question source and every question/evidence link under it."""
+    database = _database()
+    if not database.delete_question_source(source_id):
+        return jsonify(error="not found"), 404
+    return jsonify(ok=True)
+
+
+@app.get("/api/questions")
+def api_list_questions() -> Any:
+    """List questions, optionally filtered to one source."""
+    database = _database()
+    source_id = request.args.get("source_id")
+    questions = database.list_questions(
+        source_id=int(source_id) if source_id else None
+    )
+    return jsonify([question.to_dict() for question in questions])
+
+
+@app.get("/api/questions/<int:question_id>")
+def api_get_question(question_id: int) -> Any:
+    """Return one question with its evidence."""
+    database = _database()
+    question = database.get_question(question_id)
+    if question is None:
+        return jsonify(error="not found"), 404
+    return jsonify(question.to_dict())
+
+
+@app.put("/api/questions/<int:question_id>")
+def api_update_question(question_id: int) -> Any:
+    """Save a question's answer text."""
+    payload = request.get_json(force=True) or {}
+    database = _database()
+    if not database.update_question_answer(question_id, str(payload.get("answer", ""))):
+        return jsonify(error="not found"), 404
+    question = database.get_question(question_id)
+    return jsonify(question.to_dict() if question else {"id": question_id})
+
+
+@app.delete("/api/questions/<int:question_id>")
+def api_delete_question(question_id: int) -> Any:
+    """Delete a question."""
+    database = _database()
+    if not database.delete_question(question_id):
+        return jsonify(error="not found"), 404
+    return jsonify(ok=True)
+
+
+@app.post("/api/questions/<int:question_id>/evidence")
+def api_add_question_evidence(question_id: int) -> Any:
+    """Link a snippet as evidence for a question."""
+    payload = request.get_json(force=True) or {}
+    snippet_id = payload.get("snippet_id")
+    if not isinstance(snippet_id, int):
+        return jsonify(error="snippet_id is required"), 400
+    database = _database()
+    if database.get_question(question_id) is None:
+        return jsonify(error="question not found"), 404
+    if database.get_snippet(snippet_id) is None:
+        return jsonify(error="snippet not found"), 404
+    database.add_question_evidence(
+        question_id, snippet_id, str(payload.get("detail_level", "standard"))
+    )
+    question = database.get_question(question_id)
+    return jsonify(question.to_dict() if question else {"id": question_id}), 201
+
+
+@app.delete("/api/questions/<int:question_id>/evidence/<int:snippet_id>")
+def api_remove_question_evidence(question_id: int, snippet_id: int) -> Any:
+    """Unlink a snippet from a question's evidence."""
+    database = _database()
+    if not database.remove_question_evidence(question_id, snippet_id):
+        return jsonify(error="not found"), 404
+    return jsonify(ok=True)
+
+
+@app.post("/api/questions/<int:question_id>/suggest")
+def api_suggest_question_answer(question_id: int) -> Any:
+    """Draft an answer from the question's evidence, matching more in first if needed.
+
+    If the question has no evidence yet, ranks snippets against the
+    question's own prompt text (via the same matcher used for job-posting
+    matching) and links the top few before drafting. The draft is a
+    literal join of the linked snippets' content — real assembly from the
+    user's own material, not a generated/fabricated answer.
+    """
+    database = _database()
+    question = database.get_question(question_id)
+    if question is None:
+        return jsonify(error="not found"), 404
+    if not question.evidence:
+        matcher = SnippetMatcher(database)
+        for result in matcher.match(text=question.prompt, limit=3):
+            if result.snippet.id is not None:
+                variant = result.snippet.variant_for("standard") or (
+                    result.snippet.variants[0] if result.snippet.variants else None
+                )
+                if variant is not None:
+                    database.add_question_evidence(
+                        question_id, result.snippet.id, variant.detail_level
+                    )
+        question = database.get_question(question_id)
+    paragraphs = []
+    for item in question.evidence:
+        snippet = database.get_snippet(item.snippet_id)
+        if snippet is None:
+            continue
+        variant = snippet.variant_for(item.detail_level) or (
+            snippet.variants[0] if snippet.variants else None
+        )
+        if variant is not None:
+            paragraphs.append(variant.content)
+    draft = " ".join(paragraphs)
+    return jsonify(answer=draft, evidence=[item.to_dict() for item in question.evidence])
 
 
 def _image_entry(path: Path) -> dict[str, Any]:

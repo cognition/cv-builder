@@ -299,3 +299,99 @@ class TestApiEndpoints:
         assert resp.status_code == 400
         missing = client.post("/api/images/fetch", json={})
         assert missing.status_code == 400
+
+
+class TestQuestionApiEndpoints:
+    """Exercise the application-questions endpoints end-to-end."""
+
+    def test_create_source_extracts_questions(self, client: "FlaskClient") -> None:
+        """Creating a source with pasted text should extract questions."""
+        created = client.post(
+            "/api/question-sources",
+            json={
+                "title": "Government screening",
+                "source_type": "form",
+                "text": "Do you have a valid work permit?\nAre you willing to relocate?",
+            },
+        )
+        assert created.status_code == 201
+        body = created.get_json()
+        assert body["question_count"] == 2
+        source_id = body["id"]
+
+        listed_sources = client.get("/api/question-sources")
+        assert any(s["id"] == source_id for s in listed_sources.get_json())
+
+        listed_questions = client.get(f"/api/questions?source_id={source_id}")
+        prompts = {q["prompt"] for q in listed_questions.get_json()}
+        assert prompts == {
+            "Do you have a valid work permit?",
+            "Are you willing to relocate?",
+        }
+        assert all(q["status"] == "needs_evidence" for q in listed_questions.get_json())
+
+    def test_create_source_rejects_bad_type(self, client: "FlaskClient") -> None:
+        """An unknown source_type should be rejected."""
+        resp = client.post(
+            "/api/question-sources", json={"title": "x", "source_type": "essay"}
+        )
+        assert resp.status_code == 400
+
+    def test_answer_evidence_and_suggest_round_trip(
+        self, client: "FlaskClient"
+    ) -> None:
+        """Save an answer, link evidence, then re-suggest from that evidence."""
+        source = client.post(
+            "/api/question-sources", json={"title": "Leadership", "source_type": "matrix"}
+        ).get_json()
+        question = client.post(
+            "/api/question-sources", json={"title": "x2", "source_type": "matrix", "text": "Python fluency"}
+        ).get_json()
+        question_id = client.get(f"/api/questions?source_id={question['id']}").get_json()[0]["id"]
+
+        # Fixture seeds a "Python" skill snippet — find its id.
+        snippet_id = next(
+            s["id"] for s in client.get("/api/snippets").get_json() if s["heading"] == "Python"
+        )
+
+        linked = client.post(
+            f"/api/questions/{question_id}/evidence", json={"snippet_id": snippet_id}
+        )
+        assert linked.status_code == 201
+        assert linked.get_json()["evidence"][0]["snippet_id"] == snippet_id
+
+        after_link = client.get(f"/api/questions/{question_id}").get_json()
+        assert after_link["status"] == "in_progress"
+
+        suggested = client.post(f"/api/questions/{question_id}/suggest")
+        assert suggested.status_code == 200
+        assert "Python development" in suggested.get_json()["answer"]
+
+        saved = client.put(
+            f"/api/questions/{question_id}", json={"answer": "I know Python well."}
+        )
+        assert saved.status_code == 200
+        assert saved.get_json()["status"] == "complete"
+
+        unlinked = client.delete(f"/api/questions/{question_id}/evidence/{snippet_id}")
+        assert unlinked.status_code == 200
+
+        deleted = client.delete(f"/api/questions/{question_id}")
+        assert deleted.status_code == 200
+        assert client.get(f"/api/questions/{question_id}").status_code == 404
+
+        assert client.delete(f"/api/question-sources/{source['id']}").status_code == 200
+
+    def test_suggest_with_no_evidence_ranks_against_prompt(
+        self, client: "FlaskClient"
+    ) -> None:
+        """With no linked evidence yet, /suggest should match against the prompt."""
+        source = client.post(
+            "/api/question-sources",
+            json={"title": "Skills check", "source_type": "form", "text": "Python experience?"},
+        ).get_json()
+        question_id = client.get(f"/api/questions?source_id={source['id']}").get_json()[0]["id"]
+        suggested = client.post(f"/api/questions/{question_id}/suggest")
+        assert suggested.status_code == 200
+        assert suggested.get_json()["evidence"]
+        assert "Python development" in suggested.get_json()["answer"]

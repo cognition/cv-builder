@@ -1,0 +1,87 @@
+{% extends "shell/base.html" %}
+{% block title %}CV Studio — Questions{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/cv/web/src/pages/questions.css">{% endblock %}
+{% block header_actions %}<button type="button" class="primary" id="new-source">+ Add source</button>{% endblock %}
+{% block content %}
+<div class="view active">
+  <div class="heading">
+    <div>
+      <h2>Application questions</h2>
+      <p>Turn job requirements, questionnaires, and competency matrices into evidence-backed answers.</p>
+    </div>
+  </div>
+
+  <div class="question-stats">
+    <div><b id="stat-total">0</b><span>Total questions</span></div>
+    <div><b id="stat-complete">0</b><span>Answered</span></div>
+    <div><b id="stat-progress">0</b><span>In progress</span></div>
+    <div><b id="stat-needs">0</b><span>Needs evidence</span></div>
+    <progress id="progress-bar" value="0" max="100"></progress>
+    <small id="progress-label">0% complete</small>
+  </div>
+
+  <div class="question-toolbar">
+    <div class="question-tabs">
+      <button class="active" data-filter="all">All questions</button>
+      <button data-filter="needs">Needs work</button>
+      <button data-filter="complete">Complete</button>
+    </div>
+  </div>
+
+  <div class="question-layout">
+    <aside class="source-list">
+      <small>SOURCES</small>
+      <div id="source-list"></div>
+      <button class="add-source-link" id="add-source-link">&#65291; Add another source</button>
+    </aside>
+
+    <div class="question-list" id="question-list"></div>
+
+    <aside class="answer-editor" id="answer-editor">
+      <div class="answer-empty" id="answer-empty">
+        <p>Select a question to answer it.</p>
+      </div>
+      <div class="answer-body" id="answer-body">
+        <small>ANSWER WORKSPACE</small>
+        <h2 id="answer-title"></h2>
+        <p id="answer-source"></p>
+        <label>Your answer<textarea id="answer-copy" rows="6"></textarea></label>
+        <div class="answer-meta"><span id="answer-words">0 words</span></div>
+        <div class="evidence-head">
+          <h3>Linked evidence</h3>
+          <button type="button" id="link-evidence">+ Link snippet</button>
+        </div>
+        <div id="evidence-list"></div>
+        <div class="evidence-picker" id="evidence-picker">
+          <input id="evidence-search" placeholder="Search your snippet library…">
+          <div id="evidence-results"></div>
+        </div>
+        <div class="answer-actions">
+          <button type="button" id="suggest-answer">&#10022; Suggest from evidence</button>
+          <button type="button" class="primary" id="save-answer">Save answer</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="source-modal">
+  <div class="modal-dialog source-dialog">
+    <div class="drawer-head">
+      <div><small>NEW QUESTION SOURCE</small><h2>Where are the questions coming from?</h2></div>
+      <button type="button" id="close-source-modal">&times;</button>
+    </div>
+    <div class="source-type-grid">
+      <button type="button" class="selected" data-type="job"><i class="source-icon job">JD</i><b>Job description</b><span>Extract requirements as questions</span></button>
+      <button type="button" data-type="form"><i class="source-icon form">Q</i><b>Questionnaire</b><span>One explicit question per line</span></button>
+      <button type="button" data-type="matrix"><i class="source-icon matrix">&#9638;</i><b>Competency matrix</b><span>One criterion per line</span></button>
+    </div>
+    <label>Source title<input id="source-title" placeholder="e.g. Platform Manager"></label>
+    <label>Paste text<textarea id="source-text" rows="8" placeholder="Paste the job description, questions, or matrix criteria here…"></textarea></label>
+    <div class="import-row">
+      <button type="button" class="primary" id="extract-questions">Create source</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_body %}<script src="/cv/web/src/pages/questions.js"></script>{% endblock %}
