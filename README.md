@@ -157,6 +157,8 @@ Set `SNIPPETS_DB` to point either server at a different database file
 - `GET /api/images`, `POST /api/images/upload`, `POST /api/images/fetch` —
   list, upload, or download images/icons into `assets/images/`
 - `POST /api/seed` — re-seed the database from YAML + markdown sources
+- `POST /api/imports/<token>/confirm` — confirm staged import (`mode`:
+  `library`|`master`); master backups `data.yaml` then rewrites content sections
 
 ## Tests
 
@@ -166,17 +168,19 @@ python3 -m pytest
 
 ### Cucumber / Behave BDD
 
-Gherkin features under `features/*.feature` describe the shipped CV
-Studio app (shell pages + JSON APIs). They run with
-[Behave](https://behave.readthedocs.io) against the real Flask app via
-its test client (isolated SQLite DB; no wireframe simulation).
+Gherkin features under `features/` describe product behaviour informed
+by the interactive wireframe (`cv/web/wireframe.html`). **Behave always
+runs against the shipped Flask app** (test client + isolated SQLite /
+import scratch dirs) — never against the wireframe.
 
-The older in-memory wireframe suite lives under `features/wireframe/`
-and is excluded by default (`~@wireframe` in `behave.ini`).
+Tag `@wip` marks wireframe-informed backlog that is not yet asserted
+against the real UI (usually browser-driven flows). Those scenarios are
+skipped with a reason so the default suite stays green while gaps stay
+visible.
 
 ```
 pip install -r requirements.txt
 behave
-# wireframe prototype suite (separate step definitions):
-behave features/wireframe
+# include skipped @wip backlog in the report (already shown by default):
+behave --tags=@wip
 ```
