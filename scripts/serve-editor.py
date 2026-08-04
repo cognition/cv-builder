@@ -48,7 +48,6 @@ from cvbuilder.models import (
     SnippetVariant,
 )
 from cvbuilder.question_extractor import extract_questions
-from cvbuilder.resume_to_master import apply_resume_to_master
 from cvbuilder.resume_extractor import (
     SUPPORTED_EXTENSIONS,
     build_candidates,
@@ -56,6 +55,7 @@ from cvbuilder.resume_extractor import (
     extract_text,
     parse_resume,
 )
+from cvbuilder.resume_to_master import apply_resume_to_master
 
 from flask import Flask, jsonify, request, send_from_directory
 from jinja2 import (
