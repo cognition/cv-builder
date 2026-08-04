@@ -77,10 +77,13 @@ def api_app(
         "api_list_images",
         "api_upload_image",
         "api_fetch_image",
+        "api_upload_import",
     ):
         func = ns[func_name]
         func.__globals__["VARIANTS_DIR"] = repo_fixture / "cv" / "variants"
         func.__globals__["ASSETS_DIR"] = repo_fixture / "assets" / "images"
+        func.__globals__["IMPORTS_DIR"] = repo_fixture / "data" / "imports"
+        func.__globals__["STAGING_DIR"] = repo_fixture / "data" / "imports" / "staging"
         func.__globals__["cvweb"] = ns["cvweb"]
 
     database = SnippetDatabase(db_path)
@@ -395,3 +398,188 @@ class TestQuestionApiEndpoints:
         assert suggested.status_code == 200
         assert suggested.get_json()["evidence"]
         assert "Python development" in suggested.get_json()["answer"]
+
+
+SAMPLE_RESUME_TEXT = """Jordan Rivers
+
+Summary
+Platform leader with a decade of experience building resilient cloud systems.
+
+Experience
+Staff Platform Engineer — Acme Corp (2021 - Present)
+- Led migration of 40+ services to Kubernetes
+- Built the on-call incident response program
+
+Skills
+Kubernetes, Terraform, AWS
+
+Education
+BSc Computer Science, State University, 2013
+"""
+
+
+class TestResumeImportApiEndpoints:
+    """Exercise the resume-import upload/review/confirm endpoints."""
+
+    def test_upload_and_confirm_round_trip(self, client: "FlaskClient") -> None:
+        from io import BytesIO
+
+        uploaded = client.post(
+            "/api/imports",
+            data={"file": (BytesIO(SAMPLE_RESUME_TEXT.encode()), "resume.txt")},
+            content_type="multipart/form-data",
+        )
+        assert uploaded.status_code == 201
+        body = uploaded.get_json()
+        assert body["file_type"] == "txt"
+        assert body["counts"]["experience"] == 1
+        assert body["counts"]["skills"] == 3
+        assert len(body["candidates"]) == sum(body["counts"].values())
+        token = body["token"]
+
+        confirmed = client.post(f"/api/imports/{token}/confirm", json={})
+        assert confirmed.status_code == 200
+        confirmed_body = confirmed.get_json()
+        assert confirmed_body["snippet_count"] == len(body["candidates"])
+
+        listed = client.get("/api/imports")
+        assert listed.status_code == 200
+        records = listed.get_json()
+        assert len(records) == 1
+        assert records[0]["filename"] == "resume.txt"
+        assert records[0]["snippet_count"] == confirmed_body["snippet_count"]
+        import_id = records[0]["id"]
+
+        library = client.get("/api/snippets?tag=import")
+        assert len(library.get_json()) == confirmed_body["snippet_count"]
+
+        downloaded = client.get(f"/api/imports/{import_id}/source")
+        assert downloaded.status_code == 200
+        assert downloaded.data == SAMPLE_RESUME_TEXT.encode()
+
+        deleted = client.delete(f"/api/imports/{import_id}")
+        assert deleted.status_code == 200
+        assert client.get("/api/imports").get_json() == []
+
+    def test_upload_rejects_unsupported_extension(self, client: "FlaskClient") -> None:
+        from io import BytesIO
+
+        resp = client.post(
+            "/api/imports",
+            data={"file": (BytesIO(b"whatever"), "resume.exe")},
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 400
+
+    def test_confirm_respects_disabled_sections(self, client: "FlaskClient") -> None:
+        from io import BytesIO
+
+        uploaded = client.post(
+            "/api/imports",
+            data={"file": (BytesIO(SAMPLE_RESUME_TEXT.encode()), "resume.txt")},
+            content_type="multipart/form-data",
+        )
+        token = uploaded.get_json()["token"]
+
+        confirmed = client.post(
+            f"/api/imports/{token}/confirm",
+            json={
+                "sections": {
+                    "profile": False,
+                    "experience": False,
+                    "skills": True,
+                    "education": False,
+                }
+            },
+        )
+        assert confirmed.status_code == 200
+        assert confirmed.get_json()["snippet_count"] == 3
+
+        skills = client.get("/api/snippets?category=skill&tag=import")
+        assert len(skills.get_json()) == 3
+
+    def test_duplicate_candidates_are_flagged(self, client: "FlaskClient") -> None:
+        from io import BytesIO
+
+        from cvbuilder.resume_extractor import content_hash
+
+        client.post(
+            "/api/snippets",
+            json={
+                "category": "skill",
+                "heading": "Kubernetes",
+                "content_hash": content_hash("Kubernetes"),
+                "content": "Kubernetes",
+                "detail_level": "standard",
+            },
+        )
+
+        uploaded = client.post(
+            "/api/imports",
+            data={"file": (BytesIO(SAMPLE_RESUME_TEXT.encode()), "resume.txt")},
+            content_type="multipart/form-data",
+        )
+        candidates = uploaded.get_json()["candidates"]
+        kubernetes = next(c for c in candidates if c["heading"] == "Kubernetes")
+        terraform = next(c for c in candidates if c["heading"] == "Terraform")
+        assert kubernetes["duplicate"] is True
+        assert terraform["duplicate"] is False
+
+    def test_upload_real_docx_through_multipart_endpoint(
+        self, client: "FlaskClient"
+    ) -> None:
+        """A real (non-text) binary file should round-trip through the upload route."""
+        from io import BytesIO
+
+        from docx import Document
+
+        document = Document()
+        document.add_paragraph("Jordan Rivers")
+        document.add_paragraph("")
+        document.add_paragraph("Skills")
+        document.add_paragraph("Kubernetes, Terraform")
+        buf = BytesIO()
+        document.save(buf)
+        buf.seek(0)
+
+        uploaded = client.post(
+            "/api/imports",
+            data={"file": (buf, "resume.docx")},
+            content_type="multipart/form-data",
+        )
+        assert uploaded.status_code == 201
+        body = uploaded.get_json()
+        assert body["file_type"] == "docx"
+        assert body["counts"]["skills"] == 2
+
+        confirmed = client.post(f"/api/imports/{body['token']}/confirm", json={})
+        assert confirmed.status_code == 200
+        assert confirmed.get_json()["snippet_count"] == body["counts"]["skills"] + sum(
+            v for k, v in body["counts"].items() if k != "skills"
+        )
+
+        record = client.get("/api/imports").get_json()[0]
+        assert record["file_type"] == "docx"
+        downloaded = client.get(f"/api/imports/{record['id']}/source")
+        assert downloaded.status_code == 200
+        assert downloaded.data[:2] == b"PK"  # docx is a zip container
+
+    def test_confirm_unknown_token_returns_404(self, client: "FlaskClient") -> None:
+        resp = client.post("/api/imports/0011223344556677/confirm", json={})
+        assert resp.status_code == 404
+
+    def test_discard_staged_import(self, client: "FlaskClient") -> None:
+        from io import BytesIO
+
+        uploaded = client.post(
+            "/api/imports",
+            data={"file": (BytesIO(SAMPLE_RESUME_TEXT.encode()), "resume.txt")},
+            content_type="multipart/form-data",
+        )
+        token = uploaded.get_json()["token"]
+
+        discarded = client.delete(f"/api/imports/staging/{token}")
+        assert discarded.status_code == 200
+
+        confirmed = client.post(f"/api/imports/{token}/confirm", json={})
+        assert confirmed.status_code == 404

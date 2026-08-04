@@ -179,3 +179,25 @@ class Draft:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
+
+
+@dataclass
+class ResumeImport:
+    """A resume file uploaded for import, and what it produced."""
+
+    filename: str
+    file_type: str
+    stored_path: str
+    snippet_count: int = 0
+    id: Optional[int] = None
+    created_at: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable representation."""
+        return {
+            "id": self.id,
+            "filename": self.filename,
+            "file_type": self.file_type,
+            "snippet_count": self.snippet_count,
+            "created_at": self.created_at,
+        }

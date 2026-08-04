@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import shutil
 import sys
 import urllib.error
@@ -38,8 +39,22 @@ from cvbuilder.composer import CvComposer
 from cvbuilder.database import SnippetDatabase
 from cvbuilder.importer import SnippetImporter
 from cvbuilder.matcher import SnippetMatcher
-from cvbuilder.models import DetailLevel, Question, QuestionSource, Snippet, SnippetVariant
+from cvbuilder.models import (
+    DetailLevel,
+    Question,
+    QuestionSource,
+    ResumeImport,
+    Snippet,
+    SnippetVariant,
+)
 from cvbuilder.question_extractor import extract_questions
+from cvbuilder.resume_extractor import (
+    SUPPORTED_EXTENSIONS,
+    build_candidates,
+    content_hash,
+    extract_text,
+    parse_resume,
+)
 
 from flask import Flask, jsonify, request, send_from_directory
 from jinja2 import (
@@ -79,6 +94,25 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 _SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9._-]+")
 _VARIANT_YAML = YAML()
 _VARIANT_YAML.preserve_quotes = True
+
+# Uploaded resume files. Overridable so tests/BDD scenarios can point this
+# at a scratch directory instead of writing into the tracked repo tree
+# (same pattern as SNIPPETS_DB / features/environment.py's VARIANTS_DIR).
+IMPORTS_DIR = Path(
+    os.environ.get("RESUME_IMPORTS_DIR", str(cvweb.REPO_ROOT / "data" / "imports"))
+)
+STAGING_DIR = IMPORTS_DIR / "staging"
+MAX_IMPORT_BYTES = 25 * 1024 * 1024
+IMPORT_SECTIONS = ("profile", "experience", "skills", "education")
+IMPORT_FILE_TYPES = {
+    ".pdf": "pdf",
+    ".docx": "docx",
+    ".pptx": "pptx",
+    ".md": "md",
+    ".markdown": "md",
+    ".txt": "txt",
+}
+_IMPORT_TOKEN_RE = re.compile(r"^[0-9a-f]{16}$")
 
 
 def _db_path() -> Path:
@@ -186,6 +220,17 @@ def details_page() -> str:
         crumb="PROFILE",
         title="Personal and contact details",
         active="details",
+    )
+
+
+@app.get("/cv/web/import")
+def import_page() -> str:
+    """Serve the resume-import page (upload, review, import into the library)."""
+    return _render_page(
+        "pages/import.html",
+        crumb="IMPORT",
+        title="Import a resume",
+        active="import",
     )
 
 
@@ -707,6 +752,169 @@ def api_suggest_question_answer(question_id: int) -> Any:
             paragraphs.append(variant.content)
     draft = " ".join(paragraphs)
     return jsonify(answer=draft, evidence=[item.to_dict() for item in question.evidence])
+
+
+def _staged_import_path(token: str) -> Optional[Path]:
+    """Find a staged upload by its token, if it hasn't been confirmed yet."""
+    if not _IMPORT_TOKEN_RE.match(token) or not STAGING_DIR.is_dir():
+        return None
+    matches = list(STAGING_DIR.glob(f"{token}__*"))
+    return matches[0] if matches else None
+
+
+def _import_candidates_with_duplicates(
+    database: SnippetDatabase, resume: Any
+) -> list[dict[str, Any]]:
+    """Flag candidates whose content already exists as a stored snippet."""
+    candidates = build_candidates(resume)
+    existing = database.existing_content_hashes(
+        [content_hash(item["content"]) for item in candidates]
+    )
+    for candidate in candidates:
+        candidate["duplicate"] = content_hash(candidate["content"]) in existing
+    return candidates
+
+
+@app.post("/api/imports")
+def api_upload_import() -> Any:
+    """Stage an uploaded resume file and return its parsed preview.
+
+    The file is written to a staging directory and parsed immediately so
+    the review screen can show real extracted content, but nothing is
+    written to the snippet library until /confirm is called — and that
+    route re-reads and re-parses the staged file itself rather than
+    trusting a client-sent preview payload.
+    """
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        return jsonify(error="no file provided"), 400
+    original = Path(uploaded.filename)
+    ext = original.suffix.lower()
+    if ext not in SUPPORTED_EXTENSIONS:
+        return jsonify(error=f"unsupported file type: {ext or '(none)'}"), 400
+    data = uploaded.read()
+    if len(data) > MAX_IMPORT_BYTES:
+        return jsonify(error="file exceeds 25 MB limit"), 400
+    try:
+        resume = parse_resume(extract_text(uploaded.filename, data))
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    token = secrets.token_hex(8)
+    stem = _safe_name(original.stem) or "resume"
+    (STAGING_DIR / f"{token}__{stem}{ext}").write_bytes(data)
+
+    database = _database()
+    return jsonify(
+        token=token,
+        filename=uploaded.filename,
+        file_type=IMPORT_FILE_TYPES.get(ext, ext.lstrip(".")),
+        counts=resume.counts(),
+        candidates=_import_candidates_with_duplicates(database, resume),
+    ), 201
+
+
+@app.post("/api/imports/<token>/confirm")
+def api_confirm_import(token: str) -> Any:
+    """Re-parse the staged file and create snippets for the chosen sections."""
+    staged = _staged_import_path(token)
+    if staged is None:
+        return jsonify(error="import not found or already confirmed"), 404
+    payload = request.get_json(force=True) or {}
+    requested_sections = payload.get("sections")
+    enabled = (
+        {name for name in IMPORT_SECTIONS if requested_sections.get(name, True)}
+        if isinstance(requested_sections, dict)
+        else set(IMPORT_SECTIONS)
+    )
+
+    original_name = staged.name.split("__", 1)[1]
+    try:
+        resume = parse_resume(extract_text(original_name, staged.read_bytes()))
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+
+    database = _database()
+    created = 0
+    for candidate in build_candidates(resume):
+        if candidate["section"] not in enabled or not candidate["content"].strip():
+            continue
+        snippet = Snippet(
+            category=candidate["category"],
+            company=candidate["company"],
+            role=candidate["role"],
+            heading=candidate["heading"],
+            tags=candidate["tags"],
+            source_path=f"resume-import/{token}#{candidate['section']}[{candidate['index']}]",
+            content_hash=content_hash(candidate["content"]),
+        )
+        variant = SnippetVariant(
+            detail_level=DetailLevel.STANDARD.value, content=candidate["content"]
+        )
+        database.upsert_by_source(snippet, variant)
+        created += 1
+
+    IMPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    permanent_path = IMPORTS_DIR / staged.name
+    shutil.move(str(staged), str(permanent_path))
+    ext = Path(original_name).suffix.lower()
+    import_id = database.create_resume_import(
+        ResumeImport(
+            filename=original_name,
+            file_type=IMPORT_FILE_TYPES.get(ext, ext.lstrip(".")),
+            stored_path=staged.name,
+            snippet_count=created,
+        )
+    )
+    return jsonify(id=import_id, filename=original_name, snippet_count=created)
+
+
+@app.delete("/api/imports/staging/<token>")
+def api_discard_staged_import(token: str) -> Any:
+    """Delete an unconfirmed staged upload (used when the user cancels review)."""
+    staged = _staged_import_path(token)
+    if staged is not None:
+        staged.unlink()
+    return jsonify(ok=True)
+
+
+@app.get("/api/imports")
+def api_list_imports() -> Any:
+    """List past resume imports, newest first."""
+    database = _database()
+    return jsonify([item.to_dict() for item in database.list_resume_imports()])
+
+
+@app.get("/api/imports/<int:import_id>/source")
+def api_download_import_source(import_id: int) -> Any:
+    """Download the originally uploaded resume file for one import."""
+    database = _database()
+    record = database.get_resume_import(import_id)
+    if record is None:
+        return jsonify(error="not found"), 404
+    if not (IMPORTS_DIR / record.stored_path).is_file():
+        return jsonify(error="source file is missing"), 404
+    return send_from_directory(
+        IMPORTS_DIR,
+        record.stored_path,
+        download_name=record.filename,
+        as_attachment=True,
+    )
+
+
+@app.delete("/api/imports/<int:import_id>")
+def api_delete_import(import_id: int) -> Any:
+    """Delete an import record and its stored source file."""
+    database = _database()
+    record = database.get_resume_import(import_id)
+    if record is None:
+        return jsonify(error="not found"), 404
+    database.delete_resume_import(import_id)
+    stored = IMPORTS_DIR / record.stored_path
+    if stored.is_file():
+        stored.unlink()
+    return jsonify(ok=True)
 
 
 def _image_entry(path: Path) -> dict[str, Any]:

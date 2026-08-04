@@ -13,6 +13,7 @@ from cvbuilder.models import (
     Question,
     QuestionEvidence,
     QuestionSource,
+    ResumeImport,
     Snippet,
     SnippetVariant,
 )
@@ -73,12 +74,22 @@ CREATE TABLE IF NOT EXISTS question_evidence (
     FOREIGN KEY(snippet_id) REFERENCES snippets(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS resume_imports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    file_type TEXT NOT NULL,
+    stored_path TEXT NOT NULL,
+    snippet_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_snippets_category ON snippets(category);
 CREATE INDEX IF NOT EXISTS idx_snippets_company ON snippets(company);
 CREATE INDEX IF NOT EXISTS idx_variants_level ON snippet_variants(detail_level);
 CREATE INDEX IF NOT EXISTS idx_drafts_name ON drafts(name);
 CREATE INDEX IF NOT EXISTS idx_questions_source ON questions(source_id);
 CREATE INDEX IF NOT EXISTS idx_question_evidence_question ON question_evidence(question_id);
+CREATE INDEX IF NOT EXISTS idx_resume_imports_created ON resume_imports(created_at);
 """
 
 
@@ -720,6 +731,80 @@ class SnippetDatabase:
             )
             return cursor.rowcount > 0
 
+    def create_resume_import(self, resume_import: ResumeImport) -> int:
+        """Insert a resume-import record and return its id.
+
+        Args:
+            resume_import: Metadata for the uploaded file, including how
+                many snippets it produced.
+
+        Returns:
+            The new record's primary key.
+        """
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO resume_imports
+                    (filename, file_type, stored_path, snippet_count, created_at)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                """,
+                (
+                    resume_import.filename,
+                    resume_import.file_type,
+                    resume_import.stored_path,
+                    resume_import.snippet_count,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def list_resume_imports(self) -> list[ResumeImport]:
+        """Return all resume imports, newest first."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM resume_imports ORDER BY created_at DESC, id DESC"
+            ).fetchall()
+            return [self._row_to_resume_import(row) for row in rows]
+
+    def get_resume_import(self, import_id: int) -> Optional[ResumeImport]:
+        """Load one resume-import record by id."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM resume_imports WHERE id = ?", (import_id,)
+            ).fetchone()
+            return self._row_to_resume_import(row) if row else None
+
+    def delete_resume_import(self, import_id: int) -> bool:
+        """Delete a resume-import record (the stored file is not touched).
+
+        Returns:
+            True if a row was deleted.
+        """
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM resume_imports WHERE id = ?", (import_id,)
+            )
+            return cursor.rowcount > 0
+
+    def existing_content_hashes(self, hashes: list[str]) -> set[str]:
+        """Return which of ``hashes`` already exist on a stored snippet.
+
+        Used to flag likely-duplicate content in the import review UI
+        before it's created as a new snippet.
+        """
+        hashes = [value for value in hashes if value]
+        if not hashes:
+            return set()
+        placeholders = ",".join("?" for _ in hashes)
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT DISTINCT content_hash FROM snippets
+                WHERE content_hash IN ({placeholders})
+                """,
+                hashes,
+            ).fetchall()
+            return {str(row["content_hash"]) for row in rows}
+
     def _load_evidence(
         self, connection: sqlite3.Connection, question_ids: Iterable[int]
     ) -> dict[int, list[QuestionEvidence]]:
@@ -776,6 +861,18 @@ class SnippetDatabase:
             answer=str(row["answer"] or ""),
             created_at=str(row["created_at"]) if row["created_at"] else None,
             evidence=evidence,
+        )
+
+    @staticmethod
+    def _row_to_resume_import(row: sqlite3.Row) -> ResumeImport:
+        """Convert a resume_imports row into a ResumeImport model."""
+        return ResumeImport(
+            id=int(row["id"]),
+            filename=str(row["filename"]),
+            file_type=str(row["file_type"]),
+            stored_path=str(row["stored_path"]),
+            snippet_count=int(row["snippet_count"]),
+            created_at=str(row["created_at"]) if row["created_at"] else None,
         )
 
     @staticmethod

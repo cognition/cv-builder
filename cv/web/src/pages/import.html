@@ -1,0 +1,83 @@
+{% extends "shell/base.html" %}
+{% block title %}CV Studio — Import{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/cv/web/src/pages/import.css">{% endblock %}
+{% block content %}
+<div class="view active">
+  <div class="heading">
+    <div>
+      <h2>Import a resume</h2>
+      <p>Bring an existing resume into CV Studio and turn it into reusable content library snippets.</p>
+    </div>
+  </div>
+
+  <div class="import-steps">
+    <div id="step-file" class="active"><b>1</b><span>Choose file</span></div>
+    <i></i>
+    <div id="step-review"><b>2</b><span>Review &amp; import</span></div>
+  </div>
+
+  <div class="import-stage active" id="stage-file">
+    <div class="resume-drop" id="resume-drop">
+      <input id="resume-file" type="file" accept=".md,.markdown,.txt,.pdf,.docx,.pptx">
+      <span>&#8679;</span>
+      <h2 id="drop-title">Drop your resume here</h2>
+      <p>or choose a file from your computer</p>
+      <button type="button" class="primary" id="choose-resume">Choose resume</button>
+      <div class="format-row"><b>MD</b><b>TXT</b><b>PDF</b><b>DOCX</b><b>PPTX</b></div>
+      <small>Maximum file size: 25 MB &middot; Your document stays in this workspace</small>
+    </div>
+    <div class="import-options">
+      <h3>How should we use it?</h3>
+      <label class="import-choice selected">
+        <input type="radio" name="import-mode" value="library" checked>
+        <span><b>Add content to the library</b><small>Extract roles, accomplishments, skills, and education as reusable snippets.</small></span>
+      </label>
+      <label class="import-choice disabled">
+        <input type="radio" name="import-mode" value="new" disabled>
+        <span><b>Create a new master CV</b><small>Coming soon &mdash; for now, import to the library and build your CV from there.</small></span>
+      </label>
+      <label class="import-choice disabled">
+        <input type="radio" name="import-mode" value="compare" disabled>
+        <span><b>Compare with my current CV</b><small>Coming soon.</small></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="import-stage" id="stage-review">
+    <div class="import-review-head">
+      <div><span class="success-mark">&#10003;</span><div><h2>Resume ready to review</h2><p id="review-file-name"></p></div></div>
+      <button type="button" id="replace-file">Choose another file</button>
+    </div>
+    <div class="import-review-layout">
+      <div>
+        <div class="extraction-summary">
+          <div><b id="count-profile">0</b><span>Summary</span></div>
+          <div><b id="count-experience">0</b><span>Roles</span></div>
+          <div><b id="count-skills">0</b><span>Skills</span></div>
+          <div><b id="count-education">0</b><span>Education</span></div>
+        </div>
+        <div class="extracted-sections" id="extracted-sections"></div>
+      </div>
+      <aside class="import-checks">
+        <h3>Import settings</h3>
+        <label><input type="checkbox" checked data-section="profile"> Profile</label>
+        <label><input type="checkbox" checked data-section="experience"> Work experience</label>
+        <label><input type="checkbox" checked data-section="skills"> Skills</label>
+        <label><input type="checkbox" checked data-section="education"> Education</label>
+        <div class="duplicate-note" id="duplicate-note" hidden>
+          <b id="duplicate-count"></b>
+          <p>These already look like content in your library. They'll still be added as separate snippets unless you deselect their section.</p>
+        </div>
+        <button type="button" class="primary" id="complete-import">Import selected content</button>
+        <button type="button" id="cancel-import">Cancel</button>
+      </aside>
+    </div>
+  </div>
+
+  <div class="recent-imports">
+    <div class="heading"><div><h2>Recent imports</h2><p>Source files retained for reference.</p></div></div>
+    <div class="import-history" id="import-history"></div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_body %}<script src="/cv/web/src/pages/import.js"></script>{% endblock %}
