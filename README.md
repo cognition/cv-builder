@@ -51,25 +51,29 @@ Requires `google-chrome` or `chromium` on PATH for PDF export
 ### Editing in the browser
 
 `scripts/serve-editor.py` serves one app, sharing a common nav/header
-shell (`cv/web/src/shell/`) across every page below, including Master CV
-(`/cv/web/edit`):
+shell (`cv/web/src/shell/`) across every page below, including Working
+Draft CV (`/cv/web/edit`):
 
 - **`/cv/web/`** — Home dashboard: live snippet/version counts and
   recent versions.
-- **`/cv/web/edit`** ("Master CV") — click any text to edit it in place
-  inside the shell; hover controls add/reorder/delete list items (bullets,
-  skills, jobs, subsections, education, custom side panels); Save & Preview
-  in the header renders a real PDF.
+- **`/cv/web/edit`** ("Working Draft CV") — click any text to edit it in
+  place inside the shell; hover controls add/reorder/delete list items
+  (bullets, skills, jobs, subsections, education, custom side panels);
+  Save & Preview in the header renders a real PDF. Tailor applies write
+  into the database-backed working document (YAML/PDF are export
+  artefacts).
   Adding a skill/bio paragraph/education entry opens a picker fed from
   the snippet database, with search and duplicate flagging.
 - **`/cv/web/build`** ("Tailor") — paste a job posting to re-rank
-  snippets by keyword match, choose content, assemble an ordered draft,
-  and compose it into a new named variant under `cv/variants/<name>/`.
+  snippets by keyword match, choose content, save a draft (selections),
+  and apply that selection into the Working Draft CV. Optional pin /
+  version labels freeze the result for Versions.
 - **`/cv/web/library`** ("Content library") — browse/search/filter every
   snippet, switch between its brief/standard/detailed variants, and
   create/edit/delete snippets or re-seed the database from source files.
-- **`/cv/web/variants`** ("Versions") — preview, re-render, or delete
-  composed variant folders.
+- **`/cv/web/variants`** ("Versions") — list pins of the Working Draft;
+  use a pin as a Tailor starting point (restore content + selections) or
+  delete it.
 - **`/cv/web/assets`** — browse/upload photos and logos (backed by the
   `/api/images*` endpoints) and reference the built-in contact icons.
 - **`/cv/web/connect`** ("Connect AI") — MCP setup instructions and an
