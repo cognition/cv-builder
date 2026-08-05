@@ -46,7 +46,7 @@
 
 .profile-labels { display: grid; grid-template-columns: 40px 130px 1fr 40px 30px; margin-top: 4px; padding: 0 10px; color: var(--muted); font-size: 8px; }
 
-.details-preview { align-self: start; position: sticky; top: 102px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
+.details-preview { align-self: start; position: sticky; top: 0; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
 .details-preview > small { color: var(--green); font-size: 8px; font-weight: 800; letter-spacing: .1em; }
 .contact-preview { margin-top: 10px; padding: 25px 20px; background: #fff; border-radius: 10px; box-shadow: 0 6px 20px rgba(24, 51, 38, .07); text-align: center; }
 .preview-photo { display: block; width: 62px; height: 62px; margin: auto; border-radius: 50%; background: linear-gradient(145deg, #b8d0c2, #e6eee9) center/cover no-repeat; }
