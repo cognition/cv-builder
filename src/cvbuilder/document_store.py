@@ -26,22 +26,22 @@ class DocumentStore:
         """
         self.database = database
 
-    def get_working(self) -> Optional[CvDocument]:
-        """Return the working CV document (``working`` or legacy ``master``)."""
+    def get_master(self) -> Optional[CvDocument]:
+        """Return the master CV document, if one exists."""
         with self.database.connect() as connection:
             row = connection.execute(
                 """
                 SELECT * FROM cv_documents
-                WHERE kind IN ('working', 'master')
-                ORDER BY CASE kind WHEN 'working' THEN 0 ELSE 1 END, id ASC
+                WHERE kind = 'master'
+                ORDER BY id ASC
                 LIMIT 1
                 """
             ).fetchone()
             return self._row_to_document(row) if row else None
 
-    def get_master(self) -> Optional[CvDocument]:
-        """Return the working CV document (alias for :meth:`get_working`)."""
-        return self.get_working()
+    def get_working(self) -> Optional[CvDocument]:
+        """Return the master CV document for compatibility with older callers."""
+        return self.get_master()
 
     def get_variant(self, name: str) -> Optional[CvDocument]:
         """Return the named variant CV document, if one exists."""
@@ -67,17 +67,14 @@ class DocumentStore:
             ).fetchall()
             return [self._row_to_document(row) for row in rows]
 
-    def upsert_working(self, content_yaml: str) -> CvDocument:
-        """Create or update the single working CV document.
-
-        Migrates a legacy ``kind='master'`` row to ``working`` on save.
-        """
+    def upsert_master(self, content_yaml: str) -> CvDocument:
+        """Create or update the single master CV document."""
         with self.database.connect() as connection:
             existing = connection.execute(
                 """
                 SELECT id FROM cv_documents
-                WHERE kind IN ('working', 'master')
-                ORDER BY CASE kind WHEN 'working' THEN 0 ELSE 1 END, id ASC
+                WHERE kind = 'master'
+                ORDER BY id ASC
                 LIMIT 1
                 """
             ).fetchone()
@@ -86,8 +83,7 @@ class DocumentStore:
                 connection.execute(
                     """
                     UPDATE cv_documents
-                    SET kind = 'working',
-                        content_yaml = ?,
+                    SET content_yaml = ?,
                         name = NULL,
                         updated_at = datetime('now')
                     WHERE id = ?
@@ -99,16 +95,16 @@ class DocumentStore:
                     """
                     INSERT INTO cv_documents
                         (kind, name, content_yaml, updated_at)
-                    VALUES ('working', NULL, ?, datetime('now'))
+                    VALUES ('master', NULL, ?, datetime('now'))
                     """,
                     (content_yaml,),
                 )
                 document_id = int(cursor.lastrowid)
             return self._require_document(connection, document_id)
 
-    def upsert_master(self, content_yaml: str) -> CvDocument:
-        """Create or update the working CV document (alias)."""
-        return self.upsert_working(content_yaml)
+    def upsert_working(self, content_yaml: str) -> CvDocument:
+        """Create or update the master CV document for older callers."""
+        return self.upsert_master(content_yaml)
 
     def upsert_variant(self, name: str, content_yaml: str) -> CvDocument:
         """Create or update a named variant CV document."""
@@ -199,13 +195,7 @@ class DocumentStore:
             self._save_history(connection, history)
             return self._history_status(history)
 
-    def create_pin(
-        self,
-        document_id: int,
-        label: str,
-        *,
-        selections: Optional[list[dict[str, Any]]] = None,
-    ) -> CvPin:
+    def create_pin(self, document_id: int, label: str) -> CvPin:
         """Create a named snapshot of a document and its history stacks."""
         clean_label = label.strip()
         if not clean_label:
@@ -220,7 +210,6 @@ class DocumentStore:
                 content_yaml=document.content_yaml,
                 undo=history.undo,
                 redo=history.redo,
-                selections=list(selections or []),
             )
 
     def list_pins(self, document_id: int) -> list[CvPin]:
@@ -250,7 +239,6 @@ class DocumentStore:
                 content_yaml=document.content_yaml,
                 undo=history.undo,
                 redo=history.redo,
-                selections=[],
             )
             self._update_document_content(connection, pin.document_id, pin.content_yaml)
             self._save_history(
@@ -278,7 +266,6 @@ class DocumentStore:
         content_yaml: str,
         undo: list[dict[str, str]],
         redo: list[dict[str, str]],
-        selections: Optional[list[dict[str, Any]]] = None,
     ) -> CvPin:
         """Insert and return a pin snapshot."""
         cursor = connection.execute(
@@ -290,10 +277,9 @@ class DocumentStore:
                     content_yaml,
                     undo_json,
                     redo_json,
-                    selections_json,
                     created_at
                 )
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
             """,
             (
                 document_id,
@@ -301,7 +287,6 @@ class DocumentStore:
                 content_yaml,
                 json.dumps(undo[-self.MAX_HISTORY :]),
                 json.dumps(redo[-self.MAX_HISTORY :]),
-                json.dumps(list(selections or [])),
             ),
         )
         return self._require_pin(connection, int(cursor.lastrowid))
@@ -319,10 +304,15 @@ class DocumentStore:
         ).fetchone()
         if row is None:
             return CvHistoryState(document_id=document_id, undo=[], redo=[])
+        undo, redo = self._parse_stacks(
+            row["undo_json"],
+            row["redo_json"],
+            document_id=document_id,
+        )
         return CvHistoryState(
             document_id=document_id,
-            undo=self._parse_stack(row["undo_json"], document_id),
-            redo=self._parse_stack(row["redo_json"], document_id),
+            undo=undo,
+            redo=redo,
             updated_at=str(row["updated_at"]) if row["updated_at"] else None,
         )
 
@@ -375,20 +365,16 @@ class DocumentStore:
         }
 
     @staticmethod
-    def _parse_stack(raw_value: object, document_id: int) -> list[dict[str, str]]:
+    def _parse_stack_payload(
+        raw_value: object, document_id: int
+    ) -> Optional[list[dict[str, str]]]:
         """Parse a history stack JSON payload into label/text dictionaries."""
         try:
             parsed = json.loads(str(raw_value or "[]"))
         except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
-            LOGGER.warning(
-                "Corrupt CV history for document %s; resetting stack", document_id
-            )
-            return []
+            return None
         if not isinstance(parsed, list):
-            LOGGER.warning(
-                "Corrupt CV history for document %s; resetting stack", document_id
-            )
-            return []
+            return None
         stack: list[dict[str, str]] = []
         for item in parsed:
             if isinstance(item, dict) and "text" in item:
@@ -401,17 +387,18 @@ class DocumentStore:
         return stack
 
     @staticmethod
-    def _parse_selections(raw_value: object, pin_id: int) -> list[dict[str, Any]]:
-        """Parse Tailor selections JSON from a pin row."""
-        try:
-            parsed = json.loads(str(raw_value or "[]"))
-        except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
-            LOGGER.warning("Corrupt pin selections for pin %s; resetting", pin_id)
-            return []
-        if not isinstance(parsed, list):
-            LOGGER.warning("Corrupt pin selections for pin %s; resetting", pin_id)
-            return []
-        return [item for item in parsed if isinstance(item, dict)]
+    def _parse_stacks(
+        undo_json: object, redo_json: object, document_id: int
+    ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+        """Parse undo/redo stacks, resetting both if either payload is corrupt."""
+        undo = DocumentStore._parse_stack_payload(undo_json, document_id)
+        redo = DocumentStore._parse_stack_payload(redo_json, document_id)
+        if undo is None or redo is None:
+            LOGGER.warning(
+                "Corrupt CV history for document %s; resetting stacks", document_id
+            )
+            return [], []
+        return undo, redo
 
     @staticmethod
     def _row_to_document(row: sqlite3.Row) -> CvDocument:
@@ -428,20 +415,18 @@ class DocumentStore:
     def _row_to_pin(row: sqlite3.Row) -> CvPin:
         """Convert a cv_pins row into a CvPin model."""
         document_id = int(row["document_id"])
-        pin_id = int(row["id"])
-        selections_raw = "[]"
-        try:
-            selections_raw = row["selections_json"]
-        except (KeyError, IndexError):
-            selections_raw = "[]"
+        undo, redo = DocumentStore._parse_stacks(
+            row["undo_json"],
+            row["redo_json"],
+            document_id=document_id,
+        )
         return CvPin(
-            id=pin_id,
+            id=int(row["id"]),
             document_id=document_id,
             label=str(row["label"]),
             content_yaml=str(row["content_yaml"]),
-            undo=DocumentStore._parse_stack(row["undo_json"], document_id),
-            redo=DocumentStore._parse_stack(row["redo_json"], document_id),
-            selections=DocumentStore._parse_selections(selections_raw, pin_id),
+            undo=undo,
+            redo=redo,
             created_at=str(row["created_at"]) if row["created_at"] else None,
         )
 

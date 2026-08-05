@@ -25,8 +25,8 @@ class TestDocumentSchema:
         assert "cv_history" in names
         assert "cv_pins" in names
 
-    def test_cv_pins_has_selections_json(self, tmp_path: Path) -> None:
-        """cv_pins must include selections_json after ensure_schema."""
+    def test_cv_pins_excludes_tailor_selections_json(self, tmp_path: Path) -> None:
+        """Task 2 pins must not include Tailor selections_json."""
         database = SnippetDatabase(tmp_path / "snippets.db")
         database.ensure_schema()
         with database.connect() as connection:
@@ -34,4 +34,4 @@ class TestDocumentSchema:
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(cv_pins)")
             }
-        assert "selections_json" in columns
+        assert "selections_json" not in columns

@@ -105,9 +105,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_cv_documents_variant_name
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cv_documents_one_master
     ON cv_documents(kind) WHERE kind = 'master';
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_cv_documents_one_working
-    ON cv_documents(kind) WHERE kind = 'working';
-
 CREATE TABLE IF NOT EXISTS cv_history (
     document_id INTEGER PRIMARY KEY,
     undo_json TEXT NOT NULL DEFAULT '[]',
@@ -123,7 +120,6 @@ CREATE TABLE IF NOT EXISTS cv_pins (
     content_yaml TEXT NOT NULL,
     undo_json TEXT NOT NULL DEFAULT '[]',
     redo_json TEXT NOT NULL DEFAULT '[]',
-    selections_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY(document_id) REFERENCES cv_documents(id) ON DELETE CASCADE
 );
@@ -163,32 +159,6 @@ class SnippetDatabase:
         """Create tables and indexes if they do not already exist."""
         with self.connect() as connection:
             connection.executescript(SCHEMA_SQL)
-            self._migrate_document_schema(connection)
-
-    @staticmethod
-    def _migrate_document_schema(connection: sqlite3.Connection) -> None:
-        """Apply additive migrations for CV document tables.
-
-        Args:
-            connection: Open SQLite connection with row access.
-        """
-        pin_columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(cv_pins)")
-        }
-        if "selections_json" not in pin_columns:
-            connection.execute(
-                """
-                ALTER TABLE cv_pins
-                ADD COLUMN selections_json TEXT NOT NULL DEFAULT '[]'
-                """
-            )
-        connection.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_cv_documents_one_working
-                ON cv_documents(kind) WHERE kind = 'working'
-            """
-        )
 
     def create_snippet(self, snippet: Snippet) -> int:
         """Insert a snippet row and return its id.

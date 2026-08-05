@@ -31,6 +31,7 @@ class TestDocumentStore:
         store.upsert_master("bio:\n  - hello\n")
         master = store.get_master()
         assert master is not None
+        assert master.kind == "master"
         assert "hello" in master.content_yaml
 
     def test_undo_redo_round_trip(self, tmp_path: Path) -> None:
@@ -100,10 +101,10 @@ class TestDocumentStore:
         assert master is not None
         assert f"- {DocumentStore.MAX_HISTORY + 4}" in master.content_yaml
 
-    def test_corrupt_history_logs_warning_and_resets(
+    def test_corrupt_history_logs_warning_and_resets_both_stacks(
         self, tmp_path: Path, caplog: LogCaptureFixture
     ) -> None:
-        """Corrupt history JSON is treated as empty history with a warning."""
+        """Either corrupt history stack resets undo and redo with a warning."""
         store = _store(tmp_path)
         doc = store.upsert_master("bio:\n  - stable\n")
         assert doc.id is not None
@@ -116,13 +117,18 @@ class TestDocumentStore:
                     undo_json = excluded.undo_json,
                     redo_json = excluded.redo_json
                 """,
-                (doc.id, "{bad json", "[]"),
+                (
+                    doc.id,
+                    "{bad json",
+                    '[{"label": "redo", "text": "bio:\\n  - redo\\n"}]',
+                ),
             )
 
         with caplog.at_level(logging.WARNING):
             status = store.history_status(doc.id)
 
         assert status["undo_count"] == 0
+        assert status["redo_count"] == 0
         assert "Corrupt CV history" in caplog.text
 
     def test_missing_document_operations_raise_key_error(self, tmp_path: Path) -> None:
@@ -136,33 +142,23 @@ class TestDocumentStore:
         with pytest.raises(KeyError):
             store.restore_pin(999)
 
-    def test_upsert_working_and_pin_with_selections(self, tmp_path: Path) -> None:
-        """Working doc + pin must round-trip Tailor selections."""
+    def test_upsert_working_alias_persists_master_kind(self, tmp_path: Path) -> None:
+        """The compatibility alias still stores the approved master kind."""
         store = _store(tmp_path)
         doc = store.upsert_working("person:\n  first_name: Homer\nbio:\n  - hi\n")
-        assert doc.kind == "working"
-        pin = store.create_pin(
-            doc.id,
-            "ircc-v1",
-            selections=[{"snippet_id": 1, "detail_level": "standard"}],
-        )
-        assert pin.selections == [{"snippet_id": 1, "detail_level": "standard"}]
-        listed = store.list_pins(doc.id)
-        assert listed[0].selections[0]["snippet_id"] == 1
+        assert doc.kind == "master"
         assert store.get_working() is not None
         assert "Homer" in store.get_working().content_yaml
 
-    def test_get_working_reads_legacy_master_row(self, tmp_path: Path) -> None:
-        """A kind=master row is still found as the working document."""
+    def test_create_pin_contains_content_and_history_only(self, tmp_path: Path) -> None:
+        """Pin payloads freeze content plus undo/redo stacks only."""
         store = _store(tmp_path)
-        with store.database.connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO cv_documents (kind, name, content_yaml, updated_at)
-                VALUES ('master', NULL, ?, datetime('now'))
-                """,
-                ("bio:\n  - legacy\n",),
-            )
-        working = store.get_working()
-        assert working is not None
-        assert "legacy" in working.content_yaml
+        doc = store.upsert_master("bio:\n  - pinned\n")
+        store.push_before_change(doc.id, "edit", "bio:\n  - before\n")
+
+        pin = store.create_pin(doc.id, "checkpoint")
+
+        payload = pin.to_dict()
+        assert payload["content_yaml"] == "bio:\n  - pinned\n"
+        assert payload["undo"] == [{"label": "edit", "text": "bio:\n  - before\n"}]
+        assert "selections" not in payload

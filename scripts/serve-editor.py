@@ -37,7 +37,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import cvweb
 from cvbuilder.composer import CvComposer
 from cvbuilder.database import SnippetDatabase
-from cvbuilder.document_store import DocumentStore
 from cvbuilder.importer import SnippetImporter
 from cvbuilder.matcher import SnippetMatcher
 from cvbuilder.models import (
@@ -57,7 +56,6 @@ from cvbuilder.resume_extractor import (
     parse_resume,
 )
 from cvbuilder.resume_to_master import apply_resume_to_master
-from cvbuilder.working_draft import WorkingDraftApplier
 
 from flask import Flask, jsonify, request, send_from_directory
 from jinja2 import (
@@ -135,36 +133,6 @@ def _database() -> SnippetDatabase:
     return database
 
 
-def _document_store() -> DocumentStore:
-    """Return a DocumentStore, bootstrapping the working document once.
-
-    When no working/master row exists, seed from ``cvweb.DATA_FILE`` if present.
-    """
-    database = _database()
-    store = DocumentStore(database)
-    if store.get_working() is None:
-        data_file = Path(cvweb.DATA_FILE)
-        if data_file.is_file():
-            store.upsert_working(data_file.read_text(encoding="utf-8"))
-        else:
-            store.upsert_working(
-                "person: {}\nbio: []\nskills:\n  technical: []\n"
-                "  functional: []\nexperience: []\neducation: []\n"
-            )
-    return store
-
-
-def _export_working_preview() -> None:
-    """Render the Working Draft CV (or file fallback) to the preview PDF."""
-    store = _document_store()
-    working = store.get_working()
-    if working is not None:
-        document = CvComposer.loads_yaml(working.content_yaml)
-        cvweb.export_pdf(PREVIEW_PDF, data=document)
-        return
-    cvweb.export_pdf(PREVIEW_PDF)
-
-
 def _safe_name(name: str) -> str:
     """Sanitise a name for use as a directory or draft key."""
     cleaned = _SAFE_NAME_RE.sub("-", name.strip()).strip("-._")
@@ -236,13 +204,13 @@ def home_page() -> str:
 
 @app.get("/cv/web/edit")
 def edit_page() -> str:
-    """Serve Working Draft CV inside the Studio shell."""
+    """Serve Master CV inside the Studio shell."""
     body = cvweb.render_cv_body(edit_mode=True)
     return _render_page(
         "pages/master.html",
-        crumb="WORKING DRAFT CV",
-        title="Edit your working draft CV",
-        active="working-draft",
+        crumb="MASTER CV",
+        title="Edit your source CV",
+        active="master",
         cv_body_html=Markup(body),
     )
 
@@ -440,15 +408,16 @@ def api_redo() -> Any:
 
 @app.post("/api/export")
 def api_export() -> Any:
-    """Render the Working Draft (or file fallback) to the preview PDF."""
-    _export_working_preview()
+    """Render the current data.yaml to the preview PDF."""
+    cvweb.export_pdf(PREVIEW_PDF)
     return jsonify(ok=True)
 
 
 @app.get("/api/preview.pdf")
 def api_preview_pdf() -> Any:
-    """Serve the preview PDF, regenerating from the Working Draft when present."""
-    _export_working_preview()
+    """Serve the preview PDF, generating it first if missing."""
+    if not PREVIEW_PDF.exists():
+        cvweb.export_pdf(PREVIEW_PDF)
     return send_from_directory(
         PREVIEW_PDF.parent, PREVIEW_PDF.name, mimetype="application/pdf"
     )
@@ -565,60 +534,17 @@ def api_get_draft(name: str) -> Any:
 
 @app.put("/api/drafts/<name>")
 def api_save_draft(name: str) -> Any:
-    """Create or update a named draft; optionally apply into Working Draft."""
+    """Create or update a named draft selection."""
     payload = request.get_json(force=True) or {}
     selections = payload.get("selections") or []
     if not isinstance(selections, list):
         return jsonify(error="selections must be a list"), 400
-    apply = bool(payload.get("apply"))
-    pin_label = payload.get("pin_label")
     database = _database()
     try:
         draft = database.save_draft(name, selections)
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
-    result = draft.to_dict()
-    result["applied"] = False
-    if apply:
-        if not selections:
-            return jsonify(error="selections must be a non-empty list"), 400
-        applier = WorkingDraftApplier(
-            database, _document_store(), cvweb.REPO_ROOT
-        )
-        try:
-            applied = applier.apply_selections(
-                selections,
-                history_label=f"draft:{name}",
-                pin_label=str(pin_label).strip() if pin_label else None,
-            )
-        except (ValueError, KeyError) as exc:
-            return jsonify(error=str(exc)), 400
-        result["applied"] = True
-        result["apply"] = applied
-    return jsonify(result)
-
-
-@app.post("/api/drafts/<name>/apply")
-def api_apply_draft(name: str) -> Any:
-    """Re-apply a saved draft's selections into the Working Draft CV."""
-    payload = request.get_json(force=True) or {}
-    pin_label = payload.get("pin_label")
-    database = _database()
-    draft = database.get_draft(name)
-    if draft is None:
-        return jsonify(error="not found"), 404
-    applier = WorkingDraftApplier(
-        database, _document_store(), cvweb.REPO_ROOT
-    )
-    try:
-        applied = applier.apply_selections(
-            draft.selections,
-            history_label=f"draft:{name}",
-            pin_label=str(pin_label).strip() if pin_label else None,
-        )
-    except (ValueError, KeyError) as exc:
-        return jsonify(error=str(exc)), 400
-    return jsonify({"ok": True, "name": name, **applied})
+    return jsonify(draft.to_dict())
 
 
 @app.delete("/api/drafts/<name>")
@@ -1182,105 +1108,6 @@ def _list_variants() -> list[dict[str, Any]]:
     for item in variants:
         del item["_mtime"]
     return variants
-
-
-def _working_document_id(store: DocumentStore) -> int:
-    """Return the working document id, bootstrapping if needed."""
-    working = store.get_working()
-    if working is None or working.id is None:
-        raise ValueError("working draft document is missing")
-    return working.id
-
-
-@app.get("/api/pins")
-def api_list_pins() -> Any:
-    """List pins for the working document (``document=working|master``)."""
-    document = str(request.args.get("document") or "working").strip().lower()
-    if document not in {"working", "master"}:
-        return jsonify(error="only the working document is supported"), 400
-    store = _document_store()
-    try:
-        document_id = _working_document_id(store)
-    except ValueError as exc:
-        return jsonify(error=str(exc)), 400
-    pins = store.list_pins(document_id)
-    return jsonify([pin.to_dict() for pin in pins])
-
-
-@app.post("/api/pins")
-def api_create_pin() -> Any:
-    """Create a pin on the working document."""
-    payload = request.get_json(force=True) or {}
-    label = str(payload.get("label", "")).strip()
-    selections = payload.get("selections")
-    if selections is not None and not isinstance(selections, list):
-        return jsonify(error="selections must be a list"), 400
-    store = _document_store()
-    try:
-        document_id = _working_document_id(store)
-        pin = store.create_pin(
-            document_id,
-            label,
-            selections=list(selections) if isinstance(selections, list) else None,
-        )
-    except ValueError as exc:
-        return jsonify(error=str(exc)), 400
-    return jsonify(pin.to_dict()), 201
-
-
-@app.post("/api/pins/<int:pin_id>/restore")
-def api_restore_pin(pin_id: int) -> Any:
-    """Restore a pin into the working document."""
-    store = _document_store()
-    try:
-        pin = store.restore_pin(pin_id)
-    except KeyError as exc:
-        return jsonify(error=str(exc)), 404
-    return jsonify(ok=True, pin=pin.to_dict())
-
-
-@app.delete("/api/pins/<int:pin_id>")
-def api_delete_pin(pin_id: int) -> Any:
-    """Delete a saved pin."""
-    store = _document_store()
-    try:
-        store.delete_pin(pin_id)
-    except KeyError as exc:
-        return jsonify(error=str(exc)), 404
-    return jsonify(ok=True)
-
-
-@app.post("/api/pins/<int:pin_id>/load-into-draft")
-def api_pin_load_into_draft(pin_id: int) -> Any:
-    """Restore a pin into Working Draft and recreate a Tailor draft."""
-    payload = request.get_json(force=True) or {}
-    store = _document_store()
-    database = _database()
-    try:
-        pin = store.restore_pin(pin_id)
-    except KeyError as exc:
-        return jsonify(error=str(exc)), 404
-    draft_name = str(payload.get("draft_name") or "").strip()
-    if not draft_name:
-        safe = _safe_name(pin.label)
-        draft_name = f"from-{safe}" if safe else f"from-pin-{pin_id}"
-    selections = list(pin.selections or [])
-    warning = None
-    if not selections:
-        warning = (
-            "Pin has no Tailor selections; Working Draft was restored only."
-        )
-    database.save_draft(draft_name, selections)
-    return jsonify(
-        {
-            "ok": True,
-            "draft_name": draft_name,
-            "selections": selections,
-            "document_updated": True,
-            "selections_restored": bool(selections),
-            "warning": warning,
-        }
-    )
 
 
 @app.get("/api/variants")
