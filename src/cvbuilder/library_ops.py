@@ -367,3 +367,50 @@ class LibraryOps:
                     content=content,
                 )
             )
+
+    def delete_snippets(
+        self,
+        snippet_ids: list[int],
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Batch delete snippets by id.
+
+        Args:
+            snippet_ids: Primary keys to remove.
+            dry_run: When True (default), plan only; do not write.
+
+        Returns:
+            Plan or apply result with deleted/errors and counts.
+        """
+        deleted: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+        for index, raw_id in enumerate(snippet_ids):
+            try:
+                snippet_id = int(raw_id)
+            except (TypeError, ValueError):
+                errors.append(
+                    {"index": index, "message": f"invalid snippet id {raw_id!r}"}
+                )
+                continue
+            existing = self._database.get_snippet(snippet_id)
+            if existing is None:
+                errors.append(
+                    {
+                        "index": index,
+                        "message": f"snippet {snippet_id} not found",
+                    }
+                )
+                continue
+            summary = self._summarise_item(
+                {"category": existing.category, "variants": {}},
+                existing=existing,
+            )
+            if not dry_run:
+                self._database.delete_snippet(snippet_id)
+            deleted.append({"id": snippet_id, "summary": summary})
+        return {
+            "dry_run": dry_run,
+            "deleted": deleted,
+            "errors": errors,
+            "counts": {"deleted": len(deleted), "errors": len(errors)},
+        }

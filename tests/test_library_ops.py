@@ -231,3 +231,49 @@ class TestUpsertSnippets:
         )
         assert result["counts"]["errors"] == 1
         assert result["counts"]["created"] == 0
+
+
+class TestDeleteSnippets:
+    """Batch delete with dry-run default."""
+
+    def test_dry_run_does_not_delete(self, database: SnippetDatabase) -> None:
+        """dry_run=True lists the id but leaves the row."""
+        sid = _create(database, category="bio", content="A" * 40, tags=["t"])
+        result = LibraryOps(database).delete_snippets([sid], dry_run=True)
+        assert result["dry_run"] is True
+        assert result["counts"]["deleted"] == 1
+        assert database.get_snippet(sid) is not None
+
+    def test_apply_deletes(self, database: SnippetDatabase) -> None:
+        """dry_run=False removes the snippet."""
+        sid = _create(database, category="bio", content="A" * 40, tags=["t"])
+        result = LibraryOps(database).delete_snippets([sid], dry_run=False)
+        assert result["counts"]["deleted"] == 1
+        assert database.get_snippet(sid) is None
+
+    def test_unknown_id_is_error(self, database: SnippetDatabase) -> None:
+        """Missing ids are recorded as errors."""
+        result = LibraryOps(database).delete_snippets([999], dry_run=False)
+        assert result["counts"]["errors"] == 1
+        assert result["counts"]["deleted"] == 0
+
+
+class TestAuditRefinePlaybook:
+    """Audit → upsert missing brief → audit clears that gap."""
+
+    def test_fill_missing_brief(self, database: SnippetDatabase) -> None:
+        """After upserting brief, audit no longer lists that level as missing."""
+        sid = _create(database, category="bio", content="A" * 40, tags=["bio"])
+        ops = LibraryOps(database)
+        before = ops.audit()
+        entry = next(e for e in before["missing_detail_levels"] if e["id"] == sid)
+        assert "brief" in entry["missing"]
+
+        ops.upsert_snippets(
+            [{"id": sid, "variants": {"brief": "Short bio " + ("z" * 20)}}],
+            dry_run=False,
+        )
+        after = ops.audit()
+        for entry_after in after["missing_detail_levels"]:
+            if entry_after["id"] == sid:
+                assert "brief" not in entry_after["missing"]
