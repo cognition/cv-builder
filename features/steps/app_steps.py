@@ -172,10 +172,18 @@ def step_import_mode_selected(context: Context, mode: str) -> None:
 
 @then("the Master CV editor document is present")
 def step_master_editor(context: Context) -> None:
-    """Assert the CV document editor (template.html.j2) rendered."""
+    """Assert the CV document editor (template or shell-wrapped body) rendered."""
+    soup = page(context)
+    if has_selector(soup, ".cv-document"):
+        assert has_selector(soup, ".cv-document.edit-mode") or has_selector(
+            soup, ".cv-document [contenteditable='true']"
+        ), "master CV document shell missing edit-mode or contenteditable"
+        return
     html = context.page_html or ""
-    assert "edit-mode" in html.lower() or 'contenteditable' in html.lower() or (
-        "person" in html.lower() and "experience" in html.lower()
+    assert (
+        "edit-mode" in html.lower()
+        or "contenteditable" in html.lower()
+        or ("person" in html.lower() and "experience" in html.lower())
     ), "master CV editor markup missing"
 
 
