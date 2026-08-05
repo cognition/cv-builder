@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from pathlib import Path
 from typing import Any, Optional
 
 from cvbuilder.database import SnippetDatabase
@@ -25,6 +26,40 @@ class DocumentStore:
             database: SQLite database wrapper with the CV document schema.
         """
         self.database = database
+
+    def bootstrap_from_filesystem(
+        self,
+        repo_root: Path,
+        *,
+        history_path: Optional[Path] = None,
+    ) -> dict[str, Any]:
+        """Import master/variants/history once when DB documents are empty.
+
+        Returns counts: ``{"master": 0|1, "variants": N, "history": 0|1}``.
+        No-ops when a master document already exists.
+        """
+        if self.get_master() is not None:
+            return {"master": 0, "variants": 0, "history": 0}
+
+        counts: dict[str, Any] = {"master": 0, "variants": 0, "history": 0}
+        master_path = repo_root / "cv" / "web" / "data.yaml"
+        master: Optional[CvDocument] = None
+        if master_path.exists():
+            master = self.upsert_master(master_path.read_text(encoding="utf-8"))
+            counts["master"] = 1
+
+        variants_path = repo_root / "cv" / "variants"
+        if variants_path.exists():
+            for variant_path in sorted(variants_path.glob("*/data.yaml")):
+                self.upsert_variant(
+                    variant_path.parent.name,
+                    variant_path.read_text(encoding="utf-8"),
+                )
+                counts["variants"] += 1
+
+        if master is not None and self._bootstrap_history(repo_root, master, history_path):
+            counts["history"] = 1
+        return counts
 
     def get_master(self) -> Optional[CvDocument]:
         """Return the master CV document, if one exists."""
@@ -336,6 +371,61 @@ class DocumentStore:
                 json.dumps(history.redo[-self.MAX_HISTORY :]),
             ),
         )
+
+    def _bootstrap_history(
+        self,
+        repo_root: Path,
+        master: CvDocument,
+        history_path: Optional[Path],
+    ) -> bool:
+        """Import legacy history stacks for the master document when available."""
+        if master.id is None:
+            raise ValueError("master document id is required")
+        path = history_path or repo_root / "data" / "edit-history.json"
+        try:
+            if not path.exists():
+                return False
+        except OSError as error:
+            LOGGER.warning("Unable to inspect CV edit history at %s: %s", path, error)
+            return False
+        with self.database.connect() as connection:
+            history = self._load_history(connection, master.id)
+            if history.undo or history.redo:
+                return False
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as error:
+                LOGGER.warning(
+                    "Unable to import CV edit history from %s: %s", path, error
+                )
+                return False
+            if not isinstance(payload, dict):
+                return False
+            imported = CvHistoryState(
+                document_id=master.id,
+                undo=self._history_stack_from_payload(payload.get("undo")),
+                redo=self._history_stack_from_payload(payload.get("redo")),
+            )
+            if not imported.undo and not imported.redo:
+                return False
+            self._save_history(connection, imported)
+            return True
+
+    @staticmethod
+    def _history_stack_from_payload(raw_stack: object) -> list[dict[str, str]]:
+        """Convert a legacy history stack payload into stored stack entries."""
+        if not isinstance(raw_stack, list):
+            return []
+        stack: list[dict[str, str]] = []
+        for entry in raw_stack:
+            if isinstance(entry, dict) and "text" in entry:
+                stack.append(
+                    {
+                        "label": str(entry.get("label", "")),
+                        "text": str(entry["text"]),
+                    }
+                )
+        return stack
 
     def _update_document_content(
         self, connection: sqlite3.Connection, document_id: int, content_yaml: str

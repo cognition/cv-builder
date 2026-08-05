@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -174,3 +175,70 @@ class TestDocumentStore:
         assert payload["content_yaml"] == "bio:\n  - pinned\n"
         assert payload["undo"] == [{"label": "edit", "text": "bio:\n  - before\n"}]
         assert "selections" not in payload
+
+
+class TestBootstrap:
+    """One-time import from on-disk YAML into the database."""
+
+    def test_bootstrap_imports_master_and_variants(self, tmp_path: Path) -> None:
+        """Import master YAML and named variant YAML files."""
+        repo = tmp_path / "repo"
+        (repo / "cv" / "web").mkdir(parents=True)
+        (repo / "cv" / "variants" / "demo").mkdir(parents=True)
+        (repo / "cv" / "web" / "data.yaml").write_text(
+            "bio:\n  - master\n", encoding="utf-8"
+        )
+        (repo / "cv" / "variants" / "demo" / "data.yaml").write_text(
+            "bio:\n  - variant\n", encoding="utf-8"
+        )
+        store = _store(tmp_path)
+        result = store.bootstrap_from_filesystem(repo)
+        assert result["master"] == 1
+        assert result["variants"] == 1
+        master = store.get_master()
+        assert master is not None
+        assert "master" in master.content_yaml
+        assert store.get_variant("demo") is not None
+
+    def test_bootstrap_is_noop_when_master_exists(self, tmp_path: Path) -> None:
+        """Existing master content prevents any filesystem import."""
+        repo = tmp_path / "repo"
+        (repo / "cv" / "web").mkdir(parents=True)
+        (repo / "cv" / "web" / "data.yaml").write_text(
+            "bio:\n  - file\n", encoding="utf-8"
+        )
+        store = _store(tmp_path)
+        store.upsert_master("bio:\n  - db\n")
+        result = store.bootstrap_from_filesystem(repo)
+        assert result["master"] == 0
+        master = store.get_master()
+        assert master is not None
+        assert "db" in master.content_yaml
+
+    def test_bootstrap_imports_master_history(self, tmp_path: Path) -> None:
+        """Import legacy master history when the DB history is empty."""
+        repo = tmp_path / "repo"
+        history_path = repo / "data" / "edit-history.json"
+        (repo / "cv" / "web").mkdir(parents=True)
+        history_path.parent.mkdir(parents=True)
+        (repo / "cv" / "web" / "data.yaml").write_text(
+            "bio:\n  - current\n", encoding="utf-8"
+        )
+        history_path.write_text(
+            json.dumps(
+                {
+                    "undo": [{"label": "legacy", "text": "bio:\n  - old\n"}],
+                    "redo": [{"label": "legacy-redo", "text": "bio:\n  - new\n"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        store = _store(tmp_path)
+
+        result = store.bootstrap_from_filesystem(repo)
+
+        master = store.get_master()
+        assert master is not None
+        assert result["history"] == 1
+        assert store.history_status(master.id)["undo_count"] == 1
+        assert store.history_status(master.id)["redo_count"] == 1
