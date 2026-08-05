@@ -175,10 +175,11 @@ label {
 
 .empty-state h2 { margin: 0 0 6px; color: var(--ink); }
 
-/* ---------- floating PDF preview pane (Tailor + Versions) ---------- */
+/* ---------- floating PDF preview pane (Tailor + Versions + Expand) ---------- */
 
 #preview-pane {
   display: none;
+  flex-direction: column;
   position: fixed;
   right: 18px;
   bottom: 18px;
@@ -188,12 +189,67 @@ label {
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 12px 34px rgba(24, 51, 38, .22);
-  background: #fff;
+  background: #2f3437;
   z-index: 40;
 }
 
-#preview-pane.open { display: block; }
-#preview-pane iframe { width: 100%; height: 100%; border: 0; }
+#preview-pane.open {
+  display: flex;
+}
+
+#preview-pane.expanded {
+  inset: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  top: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  border-radius: 0;
+  border: 0;
+  z-index: 800;
+}
+
+#preview-pane iframe {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #525659;
+}
+
+.preview-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #1f2426;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.preview-toolbar button {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f7f4;
+  font-size: 11px;
+  font-weight: 650;
+  padding: 6px 10px;
+}
+
+.preview-toolbar button:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+body.preview-expanded .shell {
+  /* Keep shell under the fullscreen preview without layout jump. */
+  pointer-events: none;
+}
+
 
 /* ---------- toast ---------- */
 

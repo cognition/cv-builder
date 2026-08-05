@@ -11,11 +11,14 @@
     statusEl.textContent = message;
   }
 
-  function showToast(message) {
+  function showToast(message, durationMs) {
     toast.textContent = message;
     toast.classList.add("show");
     clearTimeout(showToast._t);
-    showToast._t = setTimeout(() => toast.classList.remove("show"), 2100);
+    showToast._t = setTimeout(
+      () => toast.classList.remove("show"),
+      durationMs || 2100
+    );
   }
 
   function escapeHtml(value) {
@@ -61,6 +64,7 @@
           <span class="meta">Updated ${escapeHtml(formatWhen(item.updated_at))}</span>
         </div>
         <div class="row-actions">
+          <button type="button" data-action="load">Load into Working Draft</button>
           <button type="button" data-action="preview" ${item.pdf ? "" : "disabled"}>Preview</button>
           <button type="button" data-action="render">Re-render</button>
           <button type="button" data-action="delete">Delete</button>
@@ -69,9 +73,17 @@
       row.querySelectorAll("button").forEach((btn) => {
         btn.addEventListener("click", () => {
           const action = btn.getAttribute("data-action");
-          if (action === "preview") {
-            previewPane.classList.add("open");
-            previewFrame.src = "/" + item.pdf + "?t=" + Date.now();
+          if (action === "load") {
+            loadIntoWorkingDraft(item.name).catch((err) =>
+              setStatus("Error: " + err.message)
+            );
+          } else if (action === "preview") {
+            const url = "/" + item.pdf + "?t=" + Date.now();
+            if (window.CvPreviewPane) window.CvPreviewPane.open(url);
+            else {
+              previewPane.classList.add("open");
+              previewFrame.src = url;
+            }
           } else if (action === "render") {
             renderVariant(item.name).catch((err) => setStatus("Error: " + err.message));
           } else if (action === "delete") {
@@ -84,6 +96,22 @@
     setStatus(`${variants.length} version(s).`);
   }
 
+  async function loadIntoWorkingDraft(name) {
+    setStatus(`Loading “${name}” into Working Draft…`);
+    const resp = await fetch("/api/working-draft/load-variant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name }),
+    });
+    const body = await resp.json();
+    if (!resp.ok) throw new Error(body.error || "failed to load into Working Draft");
+    showToast(
+      `Loaded “${name}” into Working Draft. Open Working Draft to review.`,
+      4500
+    );
+    setStatus(`Loaded “${name}” into Working Draft.`);
+  }
+
   async function renderVariant(name) {
     setStatus(`Rendering ${name}…`);
     const resp = await fetch(
@@ -93,8 +121,12 @@
     const result = await resp.json();
     if (!resp.ok) throw new Error(result.error || "render failed");
     if (result.pdf) {
-      previewPane.classList.add("open");
-      previewFrame.src = "/" + result.pdf + "?t=" + Date.now();
+      const url = "/" + result.pdf + "?t=" + Date.now();
+      if (window.CvPreviewPane) window.CvPreviewPane.open(url);
+      else {
+        previewPane.classList.add("open");
+        previewFrame.src = url;
+      }
     }
     await loadVariants();
     showToast(`Re-rendered ${name}.`);
@@ -112,4 +144,5 @@
   }
 
   loadVariants().catch((err) => setStatus("Error: " + err.message));
+  if (window.CvPreviewPane) window.CvPreviewPane.init();
 })();

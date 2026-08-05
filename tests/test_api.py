@@ -242,6 +242,119 @@ class TestApiEndpoints:
         assert "Keep me." in working.content_yaml
         assert "Python development" in working.content_yaml
 
+    def test_working_draft_conflicts_resolve_keep_both(
+        self, client: "FlaskClient"
+    ) -> None:
+        """Conflict endpoints list highlights and clear them on keep_both."""
+        import os
+
+        from cvbuilder.models import DetailLevel, Snippet, SnippetVariant
+
+        database = SnippetDatabase(Path(os.environ["SNIPPETS_DB"]))
+        store = DocumentStore(database)
+        store.upsert_working(
+            "person:\n  first_name: Test\n"
+            "bio: []\n"
+            "skills:\n  technical: []\n  functional: []\n"
+            "experience: []\neducation: []\n"
+        )
+        snippet_id = database.create_snippet(
+            Snippet(
+                category="bio",
+                heading="Intro",
+                tags=["api"],
+                content_hash="api-conflict",
+            )
+        )
+        database.upsert_variant(
+            SnippetVariant(
+                snippet_id=snippet_id,
+                detail_level=DetailLevel.BRIEF.value,
+                content="API brief bio.",
+            )
+        )
+        database.upsert_variant(
+            SnippetVariant(
+                snippet_id=snippet_id,
+                detail_level=DetailLevel.STANDARD.value,
+                content="API standard bio.",
+            )
+        )
+        first = client.post(
+            "/api/working-draft/add-snippets",
+            json={
+                "selections": [
+                    {
+                        "snippet_id": snippet_id,
+                        "detail_level": "standard",
+                        "section": "bio",
+                    }
+                ]
+            },
+        )
+        assert first.status_code == 200
+        second = client.post(
+            "/api/working-draft/add-snippets",
+            json={
+                "selections": [
+                    {
+                        "snippet_id": snippet_id,
+                        "detail_level": "brief",
+                        "section": "bio",
+                    }
+                ]
+            },
+        )
+        assert second.status_code == 200
+        body = second.get_json()
+        assert body["warning"]
+        listed = client.get("/api/working-draft/conflicts")
+        assert listed.status_code == 200
+        assert len(listed.get_json()["conflicts"]) >= 2
+        resolved = client.post(
+            "/api/working-draft/conflicts/resolve",
+            json={"action": "keep_both"},
+        )
+        assert resolved.status_code == 200
+        remaining = client.get("/api/working-draft/conflicts")
+        assert remaining.get_json()["conflicts"] == []
+
+    def test_load_variant_into_working_draft(
+        self, client: "FlaskClient"
+    ) -> None:
+        """POST /api/working-draft/load-variant replaces Working Draft content."""
+        import os
+
+        store = DocumentStore(SnippetDatabase(Path(os.environ["SNIPPETS_DB"])))
+        store.upsert_working(
+            "person:\n  first_name: KeepMe\n  last_name: Please\n"
+            "bio:\n  - Stale bio.\n"
+            "skills:\n  technical: []\n  functional: []\n"
+            "experience: []\neducation: []\n"
+        )
+        store.upsert_variant(
+            "ready-one",
+            "person:\n  first_name: Ignore\n"
+            "bio:\n  - Loaded from version.\n"
+            "skills:\n  technical:\n    - Loaded skill\n  functional: []\n"
+            "experience: []\neducation: []\n",
+        )
+        resp = client.post(
+            "/api/working-draft/load-variant",
+            json={"name": "ready-one"},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["name"] == "ready-one"
+        working = store.get_working()
+        assert working is not None
+        assert "KeepMe" in working.content_yaml
+        assert "Loaded from version." in working.content_yaml
+        assert "Loaded skill" in working.content_yaml
+        assert "Stale bio." not in working.content_yaml
+        assert "Ignore" not in working.content_yaml
+
     def test_match_endpoint(self, client: "FlaskClient") -> None:
         """POST /api/match should return ranked hits for known terms."""
         resp = client.post("/api/match", json={"text": "Need strong Python skills"})
@@ -597,7 +710,7 @@ class TestApiEndpoints:
 
         edit = client.get("/edit")
         assert edit.status_code == 404
-        assert b"Master CV unavailable" in edit.data
+        assert b"Working Draft unavailable" in edit.data
 
         person = client.get("/api/person")
         assert person.status_code == 404
@@ -656,6 +769,84 @@ class TestApiEndpoints:
         legacy = client.get("/cv/web/edit", follow_redirects=False)
         assert legacy.status_code == 301
         assert legacy.headers["Location"].endswith("/edit")
+
+    def test_home_lists_variants_when_exports_live_outside_repo(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, repo_fixture: Path
+    ) -> None:
+        """Home must not 500 when variant PDFs live under CV_DATA_ROOT."""
+        import os
+
+        data_root = tmp_path / "data-root"
+        variants_dir = data_root / "cv" / "variants"
+        sample_dir = variants_dir / "sample"
+        sample_dir.mkdir(parents=True)
+        (sample_dir / "sample.pdf").write_bytes(b"%PDF-1.4")
+        monkeypatch.setenv("CV_DATA_ROOT", str(data_root))
+        monkeypatch.setenv("SNIPPETS_DB", str(data_root / "snippets.db"))
+        monkeypatch.setenv("VARIANTS_DIR", str(variants_dir))
+
+        scripts = Path(__file__).resolve().parents[1] / "scripts"
+        src = Path(__file__).resolve().parents[1] / "src"
+        monkeypatch.syspath_prepend(str(scripts))
+        monkeypatch.syspath_prepend(str(src))
+        import cvweb
+
+        monkeypatch.setattr(cvweb, "REPO_ROOT", repo_fixture)
+        monkeypatch.setattr(cvweb, "WEB_DIR", repo_fixture / "cv" / "web")
+        monkeypatch.setattr(
+            cvweb, "DATA_FILE", repo_fixture / "cv" / "web" / "data.yaml"
+        )
+        sys.modules.pop("serve-editor", None)
+        ns = runpy.run_path(str(scripts / "serve-editor.py"))
+        monkeypatch.setattr(ns["cvweb"], "REPO_ROOT", repo_fixture)
+        monkeypatch.setattr(ns["cvweb"], "WEB_DIR", repo_fixture / "cv" / "web")
+        for name in (
+            "_list_variants",
+            "_variant_file_url",
+            "home_page",
+            "api_list_variants",
+            "serve_variant_export",
+            "api_render_variant",
+        ):
+            ns[name].__globals__["VARIANTS_DIR"] = variants_dir
+        ns["VARIANTS_DIR"] = variants_dir
+
+        database = SnippetDatabase(Path(os.environ["SNIPPETS_DB"]))
+        database.ensure_schema()
+        store = DocumentStore(database)
+        store.bootstrap_from_filesystem(repo_fixture)
+        store.upsert_variant("sample", "person:\n  first_name: Sample\n")
+        # Make sure home has a Working Draft document available.
+        if store.get_working() is None:
+            store.upsert_working(
+                "person:\n  first_name: Test\n  last_name: User\n"
+                "bio: []\nskills:\n  technical: []\n  functional: []\n"
+                "experience: []\neducation: []\n"
+            )
+        ns["_document_store"] = lambda: store  # type: ignore[assignment]
+        ns["home_page"].__globals__["_document_store"] = lambda: store
+        ns["api_list_variants"].__globals__["_document_store"] = lambda: store
+        ns["_list_variants"].__globals__["_document_store"] = lambda: store
+        ns["app"].config["TESTING"] = True
+        client = ns["app"].test_client()
+
+        listed = client.get("/api/variants")
+        assert listed.status_code == 200
+        body = listed.get_json()
+        assert any(item["name"] == "sample" for item in body)
+        sample = next(item for item in body if item["name"] == "sample")
+        assert sample["pdf"] == "cv/variants/sample/sample.pdf"
+
+        # Direct call mirrors what home_page uses — must not raise ValueError.
+        variants = ns["_list_variants"]()
+        assert any(
+            item["name"] == "sample" and item["pdf"] == "cv/variants/sample/sample.pdf"
+            for item in variants
+        )
+
+        pdf = client.get("/cv/variants/sample/sample.pdf")
+        assert pdf.status_code == 200
+        assert pdf.data.startswith(b"%PDF")
 
     def test_variants_list_and_delete(
         self, client: "FlaskClient", api_app: dict[str, Any], repo_fixture: Path

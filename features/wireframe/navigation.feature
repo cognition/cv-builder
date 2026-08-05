@@ -11,7 +11,7 @@ Feature: CV Studio navigation shell
     Then the navigation lists the following destinations:
       | destination       |
       | Home              |
-      | Master CV         |
+      | Working Draft     |
       | Personal details  |
       | Import resume     |
       | Tailor            |

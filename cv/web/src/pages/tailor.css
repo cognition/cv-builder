@@ -100,7 +100,7 @@
 
 /* ---------- summary / draft panel ---------- */
 
-.summary { position: sticky; top: 102px; padding: 20px; }
+.summary { position: sticky; top: 0; padding: 20px; }
 .summary > small { color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .1em; }
 
 .metric {

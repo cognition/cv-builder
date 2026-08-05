@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from cvbuilder.database import SnippetDatabase
-from cvbuilder.models import CvDocument, CvHistoryState, CvPin
+from cvbuilder.models import CvConflictHighlight, CvDocument, CvHistoryState, CvPin
 
 LOGGER = logging.getLogger(__name__)
 
@@ -292,6 +292,103 @@ class DocumentStore:
             cursor = connection.execute("DELETE FROM cv_pins WHERE id = ?", (pin_id,))
             if cursor.rowcount == 0:
                 raise KeyError(f"CV pin {pin_id} was not found")
+
+    def replace_conflict_highlights(
+        self,
+        document_id: int,
+        highlights: list[dict[str, Any]],
+    ) -> list[CvConflictHighlight]:
+        """Replace all conflict highlights for a document.
+
+        Args:
+            document_id: Working document id.
+            highlights: Rows with ``mark``, ``needle``, optional snippet fields.
+
+        Returns:
+            The saved highlight models.
+        """
+        with self.database.connect() as connection:
+            self._require_document(connection, document_id)
+            connection.execute(
+                "DELETE FROM cv_conflict_highlights WHERE document_id = ?",
+                (document_id,),
+            )
+            saved: list[CvConflictHighlight] = []
+            for item in highlights:
+                mark = str(item.get("mark") or "").strip()
+                needle = str(item.get("needle") or "").strip()
+                if mark not in {"existing", "new"} or not needle:
+                    continue
+                cursor = connection.execute(
+                    """
+                    INSERT INTO cv_conflict_highlights
+                        (
+                            document_id,
+                            mark,
+                            needle,
+                            snippet_id,
+                            detail_level,
+                            created_at
+                        )
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))
+                    """,
+                    (
+                        document_id,
+                        mark,
+                        needle,
+                        item.get("snippet_id"),
+                        item.get("detail_level"),
+                    ),
+                )
+                row = connection.execute(
+                    "SELECT * FROM cv_conflict_highlights WHERE id = ?",
+                    (int(cursor.lastrowid),),
+                ).fetchone()
+                if row is not None:
+                    saved.append(self._row_to_conflict(row))
+            return saved
+
+    def list_conflict_highlights(
+        self, document_id: int
+    ) -> list[CvConflictHighlight]:
+        """Return conflict highlights for a document, newest first."""
+        with self.database.connect() as connection:
+            self._require_document(connection, document_id)
+            rows = connection.execute(
+                """
+                SELECT * FROM cv_conflict_highlights
+                WHERE document_id = ?
+                ORDER BY created_at DESC, id DESC
+                """,
+                (document_id,),
+            ).fetchall()
+            return [self._row_to_conflict(row) for row in rows]
+
+    def clear_conflict_highlights(self, document_id: int) -> None:
+        """Remove all conflict highlights for a document."""
+        with self.database.connect() as connection:
+            self._require_document(connection, document_id)
+            connection.execute(
+                "DELETE FROM cv_conflict_highlights WHERE document_id = ?",
+                (document_id,),
+            )
+
+    @staticmethod
+    def _row_to_conflict(row: sqlite3.Row) -> CvConflictHighlight:
+        """Convert a cv_conflict_highlights row into a model."""
+        return CvConflictHighlight(
+            id=int(row["id"]),
+            document_id=int(row["document_id"]),
+            mark=str(row["mark"]),
+            needle=str(row["needle"]),
+            snippet_id=(
+                int(row["snippet_id"]) if row["snippet_id"] is not None else None
+            ),
+            detail_level=(
+                str(row["detail_level"]) if row["detail_level"] is not None else None
+            ),
+            created_at=str(row["created_at"]) if row["created_at"] else None,
+        )
 
     def _insert_pin(
         self,

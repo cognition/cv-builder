@@ -13,6 +13,11 @@
   </div>
   <div class="version-list" id="version-list"></div>
 </div>
-<div id="preview-pane"><iframe id="preview-frame" src="about:blank" title="PDF preview"></iframe></div>
+<div id="preview-pane" aria-hidden="true">
+  <iframe id="preview-frame" src="about:blank" title="PDF preview"></iframe>
+</div>
 {% endblock %}
-{% block extra_body %}<script src="/src/pages/versions.js"></script>{% endblock %}
+{% block extra_body %}
+<script src="/src/preview-pane.js"></script>
+<script src="/src/pages/versions.js"></script>
+{% endblock %}

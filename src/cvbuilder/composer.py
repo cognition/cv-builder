@@ -172,18 +172,21 @@ class CvComposer:
         self,
         document: dict[str, Any],
         selections: list[dict[str, Any]] | list[SelectionItem],
-    ) -> int:
+    ) -> tuple[int, list[dict[str, Any]]]:
         """Append selection content into an existing document mapping.
 
         Existing person fields and sections are preserved. Duplicate content
-        (exact stripped text match) is skipped.
+        (exact stripped text match) is skipped. When a different detail level
+        of the same snippet is already present, the new content is still added
+        and conflict highlight payloads are returned.
 
         Args:
             document: Mutable data.yaml-shaped mapping to update in place.
             selections: Ordered Tailor-style selections to merge.
 
         Returns:
-            Count of snippets newly merged (skips count as zero).
+            ``(added_count, conflict_highlights)`` where highlights use marks
+            ``existing`` (sibling already on the draft) and ``new`` (just added).
 
         Raises:
             ValueError: If a snippet id is missing.
@@ -191,10 +194,230 @@ class CvComposer:
         """
         items = self._normalise_selections(selections)
         added = 0
+        conflicts: list[dict[str, Any]] = []
         for item in items:
+            sibling_highlights = self._sibling_conflict_highlights(document, item)
             if self._merge_one_selection(document, item):
                 added += 1
-        return added
+                conflicts.extend(sibling_highlights)
+        return added, conflicts
+
+    def remove_needles_from_document(
+        self, document: dict[str, Any], needles: list[str]
+    ) -> int:
+        """Remove leaf values matching any needle from the document.
+
+        Args:
+            document: Mutable CV document mapping.
+            needles: Exact stripped strings to remove from lists/subsections.
+
+        Returns:
+            Count of removed leaf values.
+        """
+        targets = {needle.strip() for needle in needles if needle and needle.strip()}
+        if not targets:
+            return 0
+        removed = 0
+        for key in ("bio", "education"):
+            values = list(document.get(key) or [])
+            kept = [value for value in values if str(value).strip() not in targets]
+            removed += len(values) - len(kept)
+            document[key] = kept
+        skills = dict(document.get("skills") or {})
+        for skill_key in ("technical", "functional"):
+            values = list(skills.get(skill_key) or [])
+            kept = [value for value in values if str(value).strip() not in targets]
+            removed += len(values) - len(kept)
+            skills[skill_key] = kept
+        document["skills"] = skills
+        experience = list(document.get("experience") or [])
+        for job in experience:
+            if not isinstance(job, dict):
+                continue
+            subsections = list(job.get("subsections") or [])
+            kept_subs: list[Any] = []
+            for subsection in subsections:
+                if not isinstance(subsection, dict):
+                    kept_subs.append(subsection)
+                    continue
+                cleaned, sub_removed = self._strip_needles_from_subsection(
+                    subsection, targets
+                )
+                removed += sub_removed
+                if cleaned is not None:
+                    kept_subs.append(cleaned)
+            job["subsections"] = kept_subs
+        document["experience"] = experience
+        return removed
+
+    def _sibling_conflict_highlights(
+        self, document: dict[str, Any], item: SelectionItem
+    ) -> list[dict[str, Any]]:
+        """Build highlight rows when another detail level is already on the draft."""
+        snippet = self.database.get_snippet(item.snippet_id)
+        if snippet is None:
+            raise ValueError(f"snippet {item.snippet_id} not found")
+        new_variant = snippet.variant_for(item.detail_level)
+        if new_variant is None:
+            available = [variant.detail_level for variant in snippet.variants]
+            raise KeyError(
+                f"snippet {item.snippet_id} has no "
+                f"{item.detail_level!r} variant "
+                f"(available: {available})"
+            )
+        new_content = new_variant.content.strip()
+        if not new_content or self._document_contains_content(document, new_content):
+            return []
+        highlights: list[dict[str, Any]] = []
+        found_sibling = False
+        for variant in snippet.variants:
+            if variant.detail_level == item.detail_level:
+                continue
+            sibling_content = variant.content.strip()
+            if not sibling_content:
+                continue
+            if not self._document_contains_content(document, sibling_content):
+                continue
+            found_sibling = True
+            for needle in self._needles_for_content(sibling_content):
+                highlights.append(
+                    {
+                        "mark": "existing",
+                        "needle": needle,
+                        "snippet_id": item.snippet_id,
+                        "detail_level": variant.detail_level,
+                    }
+                )
+        if not found_sibling:
+            return []
+        for needle in self._needles_for_content(new_content):
+            highlights.append(
+                {
+                    "mark": "new",
+                    "needle": needle,
+                    "snippet_id": item.snippet_id,
+                    "detail_level": item.detail_level,
+                }
+            )
+        return highlights
+
+    def _document_contains_content(
+        self, document: dict[str, Any], content: str
+    ) -> bool:
+        """True when any needle from ``content`` already appears in the document."""
+        content = content.strip()
+        if not content:
+            return False
+        if self._text_in_list(content, list(document.get("bio") or [])):
+            return True
+        skills = document.get("skills") or {}
+        if self._text_in_list(content, list(skills.get("technical") or [])):
+            return True
+        if self._text_in_list(content, list(skills.get("functional") or [])):
+            return True
+        if self._text_in_list(content, list(document.get("education") or [])):
+            return True
+        for needle in self._needles_for_content(content):
+            if self._document_contains_needle(document, needle):
+                return True
+        bullets, paragraphs = self._split_content_blocks(content)
+        probe = {
+            "heading": "",
+            "paragraphs": paragraphs,
+            "bullets": bullets,
+        }
+        marker = self._subsection_marker(probe)
+        for job in document.get("experience") or []:
+            if not isinstance(job, dict):
+                continue
+            for subsection in job.get("subsections") or []:
+                if (
+                    isinstance(subsection, dict)
+                    and self._subsection_marker(subsection) == marker
+                ):
+                    return True
+        return False
+
+    def _document_contains_needle(
+        self, document: dict[str, Any], needle: str
+    ) -> bool:
+        """True when ``needle`` matches a bio/skill/education/experience leaf."""
+        needle = needle.strip()
+        if not needle:
+            return False
+        for key in ("bio", "education"):
+            if self._text_in_list(needle, list(document.get(key) or [])):
+                return True
+        skills = document.get("skills") or {}
+        for skill_key in ("technical", "functional"):
+            if self._text_in_list(needle, list(skills.get(skill_key) or [])):
+                return True
+        for job in document.get("experience") or []:
+            if not isinstance(job, dict):
+                continue
+            for subsection in job.get("subsections") or []:
+                if not isinstance(subsection, dict):
+                    continue
+                heading = str(subsection.get("heading") or "").strip()
+                if heading and heading == needle:
+                    return True
+                for value in list(subsection.get("paragraphs") or []):
+                    if str(value).strip() == needle:
+                        return True
+                for value in list(subsection.get("bullets") or []):
+                    if str(value).strip() == needle:
+                        return True
+        return False
+
+    @staticmethod
+    def _needles_for_content(content: str) -> list[str]:
+        """Return distinctive leaf strings used for conflict highlighting."""
+        content = content.strip()
+        if not content:
+            return []
+        bullets, paragraphs = CvComposer._split_content_blocks(content)
+        needles = [block.strip() for block in paragraphs if block.strip()]
+        needles.extend(bullet.strip() for bullet in bullets if bullet.strip())
+        if needles:
+            return needles
+        return [content]
+
+    @staticmethod
+    def _strip_needles_from_subsection(
+        subsection: dict[str, Any], targets: set[str]
+    ) -> tuple[Optional[dict[str, Any]], int]:
+        """Remove matching leaves from a subsection; drop it when empty."""
+        removed = 0
+        cleaned = dict(subsection)
+        paragraphs = [
+            value
+            for value in list(cleaned.get("paragraphs") or [])
+            if str(value).strip() not in targets
+        ]
+        removed += len(list(cleaned.get("paragraphs") or [])) - len(paragraphs)
+        bullets = [
+            value
+            for value in list(cleaned.get("bullets") or [])
+            if str(value).strip() not in targets
+        ]
+        removed += len(list(cleaned.get("bullets") or [])) - len(bullets)
+        heading = str(cleaned.get("heading") or "").strip()
+        if heading and heading in targets:
+            cleaned.pop("heading", None)
+            removed += 1
+        if paragraphs:
+            cleaned["paragraphs"] = paragraphs
+        else:
+            cleaned.pop("paragraphs", None)
+        if bullets:
+            cleaned["bullets"] = bullets
+        else:
+            cleaned.pop("bullets", None)
+        if not cleaned.get("heading") and not cleaned.get("paragraphs") and not cleaned.get(
+            "bullets"
+        ):
+            return None, removed
+        return cleaned, removed
 
     def _merge_one_selection(
         self, document: dict[str, Any], item: SelectionItem

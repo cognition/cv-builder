@@ -1,5 +1,5 @@
 {% extends "shell/base.html" %}
-{% block title %}CV Studio — Master CV{% endblock %}
+{% block title %}CV Studio — Working Draft{% endblock %}
 {% block extra_css %}
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/src/pages/master.css">
@@ -12,15 +12,29 @@
 {% endblock %}
 {% block content %}
 <div class="master-workspace">
+  <div id="conflict-banner" class="conflict-banner" hidden>
+    <p>
+      Another detail level of the same library content is on this draft.
+      <span class="conflict-legend">
+        <span class="conflict-swatch existing"></span> existing (blue)
+        <span class="conflict-swatch new"></span> newly added (red)
+      </span>
+    </p>
+    <div class="conflict-actions">
+      <button type="button" data-conflict-action="keep_both">Keep both</button>
+      <button type="button" data-conflict-action="keep_existing">Keep existing (blue)</button>
+      <button type="button" class="danger" data-conflict-action="keep_new">Keep new (red)</button>
+    </div>
+  </div>
   <div class="cv-document edit-mode">
     {{ cv_body_html | safe }}
   </div>
   <div id="preview-pane" aria-hidden="true">
-    <button type="button" id="preview-close" aria-label="Close preview">&times;</button>
     <iframe id="preview-frame" src="about:blank" title="CV PDF preview"></iframe>
   </div>
 </div>
 {% endblock %}
 {% block extra_body %}
+<script src="/src/preview-pane.js"></script>
 <script src="/editor.js"></script>
 {% endblock %}
