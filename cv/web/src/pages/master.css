@@ -2,6 +2,13 @@
  * Master CV page: wraps the contenteditable CV document (style.css) inside
  * the Studio shell. Only overlay/header-chrome/scroll concerns live here —
  * the printed document's own look stays in cv/web/style.css.
+ *
+ * IMPORTANT: style.css still defines a legacy full-bleed editor preview
+ * (`#preview-pane { position: fixed; right: 0; … }` with a viewport-fraction
+ * width). Every rule below that targets the preview MUST outrank that
+ * selector (use `.master-workspace #preview-pane…`) and fully reset
+ * top/right/bottom/left/width so the drawer cannot paint over the Studio
+ * aside.
  */
 
 .master-workspace {
@@ -9,6 +16,18 @@
   min-height: calc(100vh - 86px);
   padding: 34px 34px 80px;
   background: #dde2dd;
+  /* Clip the preview drawer to the main column. */
+  overflow: hidden;
+}
+
+/* When the PDF drawer is open, main's sticky header stays above it. */
+.shell > main {
+  position: relative;
+  isolation: isolate;
+}
+
+.shell > main > header {
+  z-index: 600;
 }
 
 /* Header actions: Save & Preview + status, inline in the sticky header
@@ -50,40 +69,43 @@
   display: none;
 }
 
-/* Preview overlay: a drawer over the main column only. Positioned
-   absolute within `.master-workspace` (the scrolling main column, not
-   the viewport) rather than viewport-fixed with a hardcoded aside
-   width, so the Studio left nav stays fully usable at any viewport size
-   and the overlay never depends on the shell's own layout numbers. */
-#preview-pane {
+/*
+ * Preview drawer — covers only `.master-workspace` (the main column body
+ * under the sticky header). Never viewport-fixed; never the legacy
+ * side-drawer width from style.css.
+ */
+.master-workspace #preview-pane {
   display: none;
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: auto;
+  max-width: none;
+  border: none;
   background: #525659;
   z-index: 500;
 }
 
-#preview-pane.open {
+.master-workspace #preview-pane.open {
   display: block;
 }
 
-/* The pane spans the full (possibly multi-page) document height so it
-   fully hides the editable CV underneath at any scroll position; the
-   iframe itself stays pinned to the visible viewport below the sticky
-   header while the user scrolls. */
-#preview-pane iframe {
-  position: sticky;
-  top: 86px;
+.master-workspace #preview-pane iframe {
+  position: absolute;
+  inset: 0;
+  top: 0;
   display: block;
   width: 100%;
-  height: calc(100vh - 86px);
+  height: 100%;
   border: none;
 }
 
-#preview-close {
-  position: fixed;
-  top: 100px;
-  right: 24px;
+.master-workspace #preview-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
   z-index: 501;
   width: 34px;
   height: 34px;
@@ -96,6 +118,14 @@
   cursor: pointer;
 }
 
-#preview-close:hover {
+.master-workspace #preview-close:hover {
   background: rgba(0, 0, 0, 0.75);
+}
+
+/* Cancel the legacy side-by-side margin shove from style.css while the
+   Studio drawer covers the document instead of sitting beside it. */
+.master-workspace .cv-document.edit-mode.preview-open .hero,
+.master-workspace .cv-document.edit-mode.preview-open .content {
+  margin-left: auto;
+  margin-right: auto;
 }
