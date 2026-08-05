@@ -276,38 +276,40 @@
   }
 
   async function composeDraft() {
-    const name = variantName.value.trim();
-    if (!name) {
-      setStatus("Please enter a version name.");
-      return;
-    }
     if (!draft.length) {
       setStatus("Add at least one snippet to the draft.");
       return;
     }
+    const pinLabel = variantName.value.trim();
+    const draftName = pinLabel || draftSelect.value || "working-draft";
     btnCompose.disabled = true;
-    setStatus("Composing version and rendering PDF…");
+    setStatus("Updating Working Draft CV…");
     try {
       const payload = {
-        name: name,
         selections: draft.map((item) => ({
           snippet_id: item.snippet_id,
           detail_level: item.detail_level,
           section: item.section,
         })),
+        apply: true,
+        pin_label: pinLabel || null,
       };
-      const resp = await fetch("/api/compose", {
-        method: "POST",
+      const resp = await fetch("/api/drafts/" + encodeURIComponent(draftName), {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const body = await resp.json();
-      if (!resp.ok) throw new Error(body.error || "compose failed");
-      if (body.pdf) {
-        previewPane.classList.add("open");
-        previewFrame.src = "/" + body.pdf + "?t=" + Date.now();
-      }
-      showToast(`Saved ${body.data_yaml}${body.pdf ? ` and ${body.pdf}` : ""}.`);
+      if (!resp.ok) throw new Error(body.error || "apply failed");
+      await fetch("/api/export", { method: "POST" });
+      previewPane.classList.add("open");
+      previewFrame.src = "/api/preview.pdf?t=" + Date.now();
+      await loadDraftOptions();
+      draftSelect.value = draftName;
+      const pinNote = body.apply && body.apply.pin
+        ? ` Pin “${body.apply.pin.label}” saved.`
+        : "";
+      showToast(`Working Draft CV updated.${pinNote}`);
       setStatus("Ready.");
     } catch (err) {
       setStatus("Error: " + err.message);
@@ -317,9 +319,9 @@
   }
 
   async function saveDraftRemote() {
-    const name = variantName.value.trim();
+    const name = variantName.value.trim() || draftSelect.value;
     if (!name) {
-      setStatus("Enter a version name before saving a draft.");
+      setStatus("Enter a draft name before saving.");
       return;
     }
     const resp = await fetch("/api/drafts/" + encodeURIComponent(name), {
@@ -333,6 +335,8 @@
           label: item.label,
           preview: item.preview,
         })),
+        apply: true,
+        pin_label: variantName.value.trim() || null,
       }),
     });
     const body = await resp.json();
@@ -340,7 +344,11 @@
     await loadDraftOptions();
     draftSelect.value = name;
     autosaveLocal();
-    showToast(`Draft "${name}" saved.`);
+    showToast(
+      body.applied
+        ? `Draft "${name}" saved and applied to Working Draft CV.`
+        : `Draft "${name}" saved.`
+    );
   }
 
   async function loadDraftRemote() {
@@ -363,7 +371,21 @@
     renderDraft();
     renderSuggestions();
     autosaveLocal();
-    showToast(`Loaded draft "${body.name}" (${draft.length} items).`);
+    if (draft.length) {
+      const applyResp = await fetch(
+        "/api/drafts/" + encodeURIComponent(name) + "/apply",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }
+      );
+      const applyBody = await applyResp.json();
+      if (!applyResp.ok) throw new Error(applyBody.error || "draft apply failed");
+      showToast(`Loaded and applied draft "${body.name}" (${draft.length} items).`);
+    } else {
+      showToast(`Loaded draft "${body.name}" (empty).`);
+    }
   }
 
   async function deleteDraftRemote() {

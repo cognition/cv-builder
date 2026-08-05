@@ -154,6 +154,17 @@ def _document_store() -> DocumentStore:
     return store
 
 
+def _export_working_preview() -> None:
+    """Render the Working Draft CV (or file fallback) to the preview PDF."""
+    store = _document_store()
+    working = store.get_working()
+    if working is not None:
+        document = CvComposer.loads_yaml(working.content_yaml)
+        cvweb.export_pdf(PREVIEW_PDF, data=document)
+        return
+    cvweb.export_pdf(PREVIEW_PDF)
+
+
 def _safe_name(name: str) -> str:
     """Sanitise a name for use as a directory or draft key."""
     cleaned = _SAFE_NAME_RE.sub("-", name.strip()).strip("-._")
@@ -225,13 +236,13 @@ def home_page() -> str:
 
 @app.get("/cv/web/edit")
 def edit_page() -> str:
-    """Serve Master CV inside the Studio shell."""
+    """Serve Working Draft CV inside the Studio shell."""
     body = cvweb.render_cv_body(edit_mode=True)
     return _render_page(
         "pages/master.html",
-        crumb="MASTER CV",
-        title="Edit your source CV",
-        active="master",
+        crumb="WORKING DRAFT CV",
+        title="Edit your working draft CV",
+        active="working-draft",
         cv_body_html=Markup(body),
     )
 
@@ -429,16 +440,15 @@ def api_redo() -> Any:
 
 @app.post("/api/export")
 def api_export() -> Any:
-    """Render the current data.yaml to the preview PDF."""
-    cvweb.export_pdf(PREVIEW_PDF)
+    """Render the Working Draft (or file fallback) to the preview PDF."""
+    _export_working_preview()
     return jsonify(ok=True)
 
 
 @app.get("/api/preview.pdf")
 def api_preview_pdf() -> Any:
-    """Serve the preview PDF, generating it first if missing."""
-    if not PREVIEW_PDF.exists():
-        cvweb.export_pdf(PREVIEW_PDF)
+    """Serve the preview PDF, regenerating from the Working Draft when present."""
+    _export_working_preview()
     return send_from_directory(
         PREVIEW_PDF.parent, PREVIEW_PDF.name, mimetype="application/pdf"
     )

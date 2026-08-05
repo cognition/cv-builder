@@ -22,7 +22,7 @@ Feature: Real CV Studio app shell routes
       | /cv/web/assets    | assets    |
       | /cv/web/connect   | connect   |
 
-  Scenario: Master CV editor remains reachable
+  Scenario: Working Draft CV editor remains reachable
     When I request the app path "/cv/web/edit"
     Then the response status is 200
     And the Master CV editor document is present

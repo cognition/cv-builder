@@ -12,6 +12,8 @@ PAGE_ROUTES = {
     "home": "/cv/web/",
     "master": "/cv/web/edit",
     "master cv": "/cv/web/edit",
+    "working draft": "/cv/web/edit",
+    "working draft cv": "/cv/web/edit",
     "edit": "/cv/web/edit",
     "personal details": "/cv/web/details",
     "details": "/cv/web/details",
@@ -34,8 +36,11 @@ PAGE_ROUTES = {
 
 NAV_ACTIVE = {
     "home": "home",
-    "master": "master",
-    "master cv": "master",
+    "master": "working-draft",
+    "master cv": "working-draft",
+    "working draft": "working-draft",
+    "working draft cv": "working-draft",
+    "working-draft": "working-draft",
     "personal details": "details",
     "details": "details",
     "tailor": "tailor",
