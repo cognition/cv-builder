@@ -1,0 +1,128 @@
+"""Tests for Content library audit and batch ops."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from cvbuilder.database import SnippetDatabase
+from cvbuilder.library_ops import LibraryOps
+from cvbuilder.models import Snippet, SnippetVariant
+
+
+@pytest.fixture
+def database(tmp_path: Path) -> SnippetDatabase:
+    """Isolated empty snippet database."""
+    path = tmp_path / "snippets.db"
+    db = SnippetDatabase(path)
+    db.ensure_schema()
+    return db
+
+
+def _create(
+    database: SnippetDatabase,
+    *,
+    category: str,
+    content: str,
+    detail_level: str = "standard",
+    company: str | None = None,
+    role: str | None = None,
+    heading: str | None = None,
+    tags: list[str] | None = None,
+) -> int:
+    """Insert one snippet with a single variant; return id."""
+    snippet_id = database.create_snippet(
+        Snippet(
+            category=category,
+            company=company,
+            role=role,
+            heading=heading,
+            tags=tags or [],
+        )
+    )
+    database.upsert_variant(
+        SnippetVariant(
+            snippet_id=snippet_id,
+            detail_level=detail_level,
+            content=content,
+        )
+    )
+    return snippet_id
+
+
+class TestAuditLibrary:
+    """Read-only library health report."""
+
+    def test_reports_missing_detail_levels(self, database: SnippetDatabase) -> None:
+        """Snippets lacking brief/detailed appear under missing_detail_levels."""
+        sid = _create(database, category="bio", content="A" * 40)
+        report = LibraryOps(database).audit()
+        entry = next(e for e in report["missing_detail_levels"] if e["id"] == sid)
+        assert set(entry["missing"]) == {"brief", "detailed"}
+        assert entry["category"] == "bio"
+
+    def test_reports_empty_tags(self, database: SnippetDatabase) -> None:
+        """Untagged snippets appear under empty_tags."""
+        sid = _create(database, category="skill", content="A" * 40, tags=[])
+        report = LibraryOps(database).audit()
+        assert any(e["id"] == sid for e in report["empty_tags"])
+
+    def test_reports_sparse_experience_heading(self, database: SnippetDatabase) -> None:
+        """Experience without heading is flagged."""
+        sid = _create(
+            database,
+            category="experience",
+            content="A" * 40,
+            company="Acme",
+            role="Eng",
+            heading=None,
+        )
+        report = LibraryOps(database).audit()
+        assert any(e["id"] == sid for e in report["sparse_headings"])
+
+    def test_reports_length_outliers(self, database: SnippetDatabase) -> None:
+        """Very short variant content is flagged as too_short."""
+        sid = _create(database, category="skill", content="x", tags=["t"])
+        report = LibraryOps(database).audit()
+        hits = [e for e in report["length_outliers"] if e["id"] == sid]
+        assert hits
+        assert hits[0]["reason"] == "too_short"
+
+    def test_duplicate_candidates_same_company_role(
+        self, database: SnippetDatabase
+    ) -> None:
+        """Two experience rows with same company+role are duplicate candidates."""
+        a = _create(
+            database,
+            category="experience",
+            content="A" * 40,
+            company="Acme",
+            role="Engineer",
+            heading="One",
+            tags=["x"],
+        )
+        b = _create(
+            database,
+            category="experience",
+            content="B" * 40,
+            company="Acme",
+            role="Engineer",
+            heading="Two",
+            tags=["x"],
+        )
+        report = LibraryOps(database).audit()
+        found = False
+        for group in report["duplicate_candidates"]:
+            if set(group["ids"]) == {a, b}:
+                assert group["reason"] == "same_company_role"
+                found = True
+        assert found
+
+    def test_counts_by_category(self, database: SnippetDatabase) -> None:
+        """Report includes per-category counts."""
+        _create(database, category="bio", content="A" * 40, tags=["a"])
+        _create(database, category="skill", content="B" * 40, tags=["b"])
+        report = LibraryOps(database).audit()
+        assert report["counts_by_category"]["bio"] == 1
+        assert report["counts_by_category"]["skill"] == 1
