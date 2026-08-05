@@ -15,6 +15,7 @@ from ruamel.yaml.scalarstring import FoldedScalarString
 from cvbuilder.database import SnippetDatabase
 from cvbuilder.document_store import DocumentStore
 from cvbuilder.models import DetailLevel, SelectionItem
+from cvbuilder.paths import DataPaths
 
 _YAML = YAML()
 _YAML.preserve_quotes = True
@@ -41,7 +42,7 @@ class CvComposer:
         self.database = database
         self.repo_root = Path(repo_root)
         self.base_data_path = self.repo_root / "cv" / "web" / "data.yaml"
-        self.variants_dir = self.repo_root / "cv" / "variants"
+        self.variants_dir = DataPaths(self.repo_root).variants
 
     def compose(
         self,
@@ -149,6 +150,182 @@ class CvComposer:
     def dump_document_yaml(self, document: dict[str, Any]) -> str:
         """Serialise a document mapping to YAML text."""
         return self._dump_yaml(document)
+
+    def load_document_yaml(self, content_yaml: str) -> dict[str, Any]:
+        """Parse a full Working Draft YAML mapping without clearing sections.
+
+        Args:
+            content_yaml: Current working document YAML text.
+
+        Returns:
+            The parsed document mapping.
+
+        Raises:
+            ValueError: If the YAML is not a mapping.
+        """
+        data = _YAML.load(content_yaml) or {}
+        if not isinstance(data, dict):
+            raise ValueError("CV document YAML must be a mapping")
+        return data
+
+    def merge_selections_into_document(
+        self,
+        document: dict[str, Any],
+        selections: list[dict[str, Any]] | list[SelectionItem],
+    ) -> int:
+        """Append selection content into an existing document mapping.
+
+        Existing person fields and sections are preserved. Duplicate content
+        (exact stripped text match) is skipped.
+
+        Args:
+            document: Mutable data.yaml-shaped mapping to update in place.
+            selections: Ordered Tailor-style selections to merge.
+
+        Returns:
+            Count of snippets newly merged (skips count as zero).
+
+        Raises:
+            ValueError: If a snippet id is missing.
+            KeyError: If a requested detail level has no content.
+        """
+        items = self._normalise_selections(selections)
+        added = 0
+        for item in items:
+            if self._merge_one_selection(document, item):
+                added += 1
+        return added
+
+    def _merge_one_selection(
+        self, document: dict[str, Any], item: SelectionItem
+    ) -> bool:
+        """Merge one selection into ``document``. Return True if content added."""
+        snippet = self.database.get_snippet(item.snippet_id)
+        if snippet is None:
+            raise ValueError(f"snippet {item.snippet_id} not found")
+        variant = snippet.variant_for(item.detail_level)
+        if variant is None:
+            available = [v.detail_level for v in snippet.variants]
+            raise KeyError(
+                f"snippet {item.snippet_id} has no "
+                f"{item.detail_level!r} variant "
+                f"(available: {available})"
+            )
+        section = item.section or snippet.category
+        content = variant.content.strip()
+        if not content:
+            return False
+
+        if section == "bio":
+            bio = list(document.get("bio") or [])
+            if self._text_in_list(content, bio):
+                return False
+            bio.append(FoldedScalarString(content))
+            document["bio"] = bio
+            return True
+
+        if section == "skill":
+            skills = dict(document.get("skills") or {})
+            technical = list(skills.get("technical") or [])
+            functional = list(skills.get("functional") or [])
+            skill_kind = (snippet.role or "technical").lower()
+            target = functional if "functional" in skill_kind else technical
+            if self._text_in_list(content, target):
+                return False
+            target.append(content)
+            if "functional" in skill_kind:
+                skills["functional"] = target
+            else:
+                skills["technical"] = target
+            document["skills"] = skills
+            return True
+
+        if section in {"experience", "requirement"}:
+            return self._merge_experience_entry(document, snippet, content)
+
+        if section in {"part", "education"}:
+            education = list(document.get("education") or [])
+            if self._text_in_list(content, education):
+                return False
+            education.append(content)
+            document["education"] = education
+            return True
+
+        return self._merge_experience_entry(
+            document,
+            snippet,
+            content,
+            company_override="General",
+            heading_override=snippet.heading or section,
+        )
+
+    def _merge_experience_entry(
+        self,
+        document: dict[str, Any],
+        snippet: Any,
+        content: str,
+        *,
+        company_override: Optional[str] = None,
+        heading_override: Optional[str] = None,
+    ) -> bool:
+        """Append an experience subsection under a company job block."""
+        company = company_override or snippet.company or "General"
+        experience = list(document.get("experience") or [])
+        job: Optional[dict[str, Any]] = None
+        for entry in experience:
+            if isinstance(entry, dict) and entry.get("company") == company:
+                job = entry
+                break
+        if job is None:
+            job = {
+                "company": company,
+                "role": snippet.role or "",
+                "subsections": [],
+            }
+            experience.append(job)
+        elif snippet.role and not job.get("role"):
+            job["role"] = snippet.role
+
+        bullets, paragraphs = self._split_content_blocks(content)
+        subsection: dict[str, Any] = {}
+        heading = heading_override if heading_override is not None else snippet.heading
+        if heading:
+            subsection["heading"] = heading
+        if paragraphs:
+            subsection["paragraphs"] = [FoldedScalarString(p) for p in paragraphs]
+        if bullets:
+            subsection["bullets"] = bullets
+        if not subsection:
+            return False
+
+        existing = list(job.get("subsections") or [])
+        marker = self._subsection_marker(subsection)
+        for current in existing:
+            if isinstance(current, dict) and self._subsection_marker(current) == marker:
+                return False
+        existing.append(subsection)
+        job["subsections"] = existing
+        document["experience"] = experience
+        return True
+
+    @staticmethod
+    def _text_in_list(content: str, values: list[Any]) -> bool:
+        """True when ``content`` already appears (stripped) in ``values``."""
+        needle = content.strip()
+        for value in values:
+            if str(value).strip() == needle:
+                return True
+        return False
+
+    @staticmethod
+    def _subsection_marker(subsection: dict[str, Any]) -> str:
+        """Build a stable string marker for experience subsection dedupe."""
+        heading = str(subsection.get("heading") or "")
+        paragraphs = subsection.get("paragraphs") or []
+        bullets = subsection.get("bullets") or []
+        para_text = "\n".join(str(item).strip() for item in paragraphs)
+        bullet_text = "\n".join(str(item).strip() for item in bullets)
+        return f"{heading}|{para_text}|{bullet_text}"
 
     def _build_document(
         self, base: dict[str, Any], items: list[SelectionItem]

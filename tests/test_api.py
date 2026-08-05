@@ -207,6 +207,41 @@ class TestApiEndpoints:
         assert working is not None
         assert "Python development" in working.content_yaml
 
+    def test_working_draft_add_snippets_merges_without_wipe(
+        self, client: "FlaskClient"
+    ) -> None:
+        """POST /api/working-draft/add-snippets appends into the Working Draft."""
+        import os
+
+        store = DocumentStore(SnippetDatabase(Path(os.environ["SNIPPETS_DB"])))
+        store.upsert_working(
+            "person:\n  first_name: Test\n"
+            "bio:\n  - Keep me.\n"
+            "skills:\n  technical: []\n  functional: []\n"
+            "experience: []\neducation: []\n"
+        )
+        snippets = client.get("/api/snippets").get_json()
+        snippet_id = snippets[0]["id"]
+        resp = client.post(
+            "/api/working-draft/add-snippets",
+            json={
+                "selections": [
+                    {
+                        "snippet_id": snippet_id,
+                        "detail_level": "standard",
+                        "section": "skill",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["added_count"] == 1
+        working = store.get_working()
+        assert working is not None
+        assert "Keep me." in working.content_yaml
+        assert "Python development" in working.content_yaml
+
     def test_match_endpoint(self, client: "FlaskClient") -> None:
         """POST /api/match should return ranked hits for known terms."""
         resp = client.post("/api/match", json={"text": "Need strong Python skills"})

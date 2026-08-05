@@ -886,6 +886,25 @@ def api_apply_draft(name: str) -> Any:
     return jsonify({"ok": True, "name": name, **applied})
 
 
+@app.post("/api/working-draft/add-snippets")
+def api_working_draft_add_snippets() -> Any:
+    """Merge library snippet selections into the Working Draft CV."""
+    payload = request.get_json(force=True) or {}
+    selections = payload.get("selections") or []
+    if not isinstance(selections, list) or not selections:
+        return jsonify(error="selections must be a non-empty list"), 400
+    database = _database()
+    store = _document_store()
+    applier = WorkingDraftApplier(database, store, cvweb.REPO_ROOT)
+    try:
+        result = applier.merge_selections(
+            selections, history_label="library-add"
+        )
+    except (ValueError, KeyError) as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(result)
+
+
 @app.delete("/api/drafts/<name>")
 def api_delete_draft(name: str) -> Any:
     """Delete a named draft."""

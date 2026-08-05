@@ -79,3 +79,52 @@ class WorkingDraftApplier:
             "selection_count": len(selections),
             "pin": pin_payload,
         }
+
+    def merge_selections(
+        self,
+        selections: list[dict[str, Any]],
+        *,
+        history_label: str = "library-add",
+    ) -> dict[str, Any]:
+        """Merge snippet selections into the Working Draft without wiping it.
+
+        Args:
+            selections: Ordered Tailor-style selections to append.
+            history_label: Undo label recorded before the change.
+
+        Returns:
+            Summary with document id, requested count, and newly added count.
+
+        Raises:
+            ValueError: Empty selections or missing working document.
+            KeyError: Missing snippet detail level.
+        """
+        if not selections:
+            raise ValueError("selections must be a non-empty list")
+        working = self.store.get_working()
+        if working is None or working.id is None:
+            raise ValueError("working draft document is missing")
+        document = self.composer.load_document_yaml(working.content_yaml)
+        added = self.composer.merge_selections_into_document(
+            document, selections
+        )
+        if added == 0:
+            return {
+                "ok": True,
+                "document_id": working.id,
+                "selection_count": len(selections),
+                "added_count": 0,
+                "skipped_count": len(selections),
+            }
+        new_yaml = self.composer.dump_document_yaml(document)
+        self.store.push_before_change(
+            working.id, history_label, working.content_yaml
+        )
+        saved = self.store.upsert_working(new_yaml)
+        return {
+            "ok": True,
+            "document_id": saved.id,
+            "selection_count": len(selections),
+            "added_count": added,
+            "skipped_count": len(selections) - added,
+        }
