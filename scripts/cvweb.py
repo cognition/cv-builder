@@ -218,7 +218,19 @@ def edit_history(path: Optional[Path] = None) -> EditHistory:
     return EditHistory(path=path)
 
 
-def render_html(data=None, edit_mode: bool = False) -> str:
+def render_cv_body(data: Optional[Any] = None, *, edit_mode: bool = False) -> str:
+    """Render ``cv_body.html.j2`` with CV data and no page chrome."""
+    if data is None:
+        data = load_data()
+    env = Environment(loader=FileSystemLoader(str(WEB_DIR)))
+    return env.get_template("cv_body.html.j2").render(
+        edit_mode=edit_mode,
+        **data,
+    )
+
+
+def render_html(data: Optional[Any] = None, edit_mode: bool = False) -> str:
+    """Render the standalone CV HTML document for print and export."""
     if data is None:
         data = load_data()
     env = Environment(loader=FileSystemLoader(str(WEB_DIR)))

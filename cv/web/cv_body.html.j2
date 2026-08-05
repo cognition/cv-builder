@@ -1,0 +1,107 @@
+{%- macro ea(path) -%}
+{%- if edit_mode %} contenteditable="true" data-path="{{ path }}"{% endif -%}
+{%- endmacro %}
+{%- set PROVIDER_BADGES = {
+  "linkedin": "in", "github": "GH", "gitlab": "GL", "medium": "M",
+  "instagram": "IG", "website": "WWW"
+} -%}
+<div class="hero">
+  <aside class="sidebar">
+    <img class="photo" src="{{ person.photo }}" alt="{{ person.first_name }} {{ person.last_name }}">
+    <h1><span{{ ea('person.first_name') }}>{{ person.first_name }}</span> <span{{ ea('person.last_name') }}>{{ person.last_name }}</span></h1>
+    <p class="tagline"{{ ea('person.tagline') }}>{{ person.tagline }}</p>
+    <p class="quote">&ldquo;<span{{ ea('person.quote') }}>{{ person.quote }}</span>&rdquo;</p>
+
+    <div class="contact">
+      <p{{ ea('person.email') }}>{{ person.email }}</p>
+      <p{{ ea('person.mobile') }}>{{ person.mobile }}</p>
+      {% set addr = person.address or {} %}
+      {% if addr.display and addr.display != 'hide' %}
+      <p>
+        <span class="badge">&#8962;</span>
+        <span>{% if addr.display == 'full' %}{{ [addr.street, addr.city, addr.region, addr.country] | select | join(', ') }}{% else %}{{ [addr.city, addr.country] | select | join(', ') }}{% endif %}</span>
+      </p>
+      {% endif %}
+      {% for profile in person.profiles or [] %}
+      {% if profile.visible %}
+      <p><span class="badge">{{ PROVIDER_BADGES.get(profile.provider, (profile.provider or '?')[:2]|upper) }}</span> <span{{ ea('person.profiles[' ~ loop.index0 ~ '].handle') }}>{{ profile.handle }}</span></p>
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    <div class="skills-block">
+      <h2>Technical Skills</h2>
+      <ul>{% for s in skills.technical %}<li{{ ea('skills.technical[' ~ loop.index0 ~ ']') }}>{{ s }}</li>{% endfor %}</ul>
+    </div>
+
+    <div class="skills-block">
+      <h2>Functional Skills</h2>
+      <ul>{% for s in skills.functional %}<li{{ ea('skills.functional[' ~ loop.index0 ~ ']') }}>{{ s }}</li>{% endfor %}</ul>
+    </div>
+
+    {% for panel in panels or [] %}
+    {% set panel_idx = loop.index0 %}
+    <div class="skills-block side-panel">
+      <h2{{ ea('panels[' ~ panel_idx ~ '].title') }}>{{ panel.title }}</h2>
+      <ul>{% for item in panel['items'] or [] %}<li{{ ea('panels[' ~ panel_idx ~ '].items[' ~ loop.index0 ~ ']') }}>{{ item }}</li>{% endfor %}</ul>
+    </div>
+    {% endfor %}
+
+    <div class="strengths">
+      {% for s in person.strengths %}<span{{ ea('person.strengths[' ~ loop.index0 ~ ']') }}>{{ s }}</span>{% endfor %}
+    </div>
+  </aside>
+
+  <main class="intro">
+    <div class="bio-block">
+      <h2 class="col-title">Profile</h2>
+      {% for p in bio %}<p{{ ea('bio[' ~ loop.index0 ~ ']') }}>{{ p }}</p>{% endfor %}
+    </div>
+
+    <div class="snapshot">
+      <h2 class="col-title">Career Snapshot</h2>
+      <table class="snapshot-table">
+        {% for job in experience %}
+        <tr>
+          <td class="snap-company">{{ job.company }}</td>
+          <td class="snap-role">{{ job.role }}</td>
+          <td class="snap-dates">{{ job.dates or '' }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+
+    <div class="education">
+      <h2 class="col-title">Education</h2>
+      <ul>{% for e in education %}<li{{ ea('education[' ~ loop.index0 ~ ']') }}>{{ e }}</li>{% endfor %}</ul>
+    </div>
+  </main>
+</div>
+
+<div class="content">
+  <h2 class="section-title">Selected Experience</h2>
+
+  {% for job in experience %}
+  {% set job_idx = loop.index0 %}
+  <div class="job">
+    <h3 class="job-title"{{ ea('experience[' ~ job_idx ~ '].company') }}>{{ job.company }}</h3>
+    <p class="role">
+      <span{{ ea('experience[' ~ job_idx ~ '].role') }}>{{ job.role }}</span>{% if job.dates %} | <span{{ ea('experience[' ~ job_idx ~ '].dates') }}>{{ job.dates }}</span>{% endif %}{% if job.location %} | <span{{ ea('experience[' ~ job_idx ~ '].location') }}>{{ job.location }}</span>{% endif %}
+    </p>
+    {% if job.intro %}<p class="intro-text"{{ ea('experience[' ~ job_idx ~ '].intro') }}>{{ job.intro }}</p>{% endif %}
+
+    {% for sub in job.subsections %}
+    {% set sub_idx = loop.index0 %}
+    {% set sub_path = 'experience[' ~ job_idx ~ '].subsections[' ~ sub_idx ~ ']' %}
+    <div class="subsection">
+      {% if sub.heading %}<h4 class="sub-title"{{ ea(sub_path ~ '.heading') }}>{{ sub.heading }}</h4>{% endif %}
+      {% if sub.intro %}<p{{ ea(sub_path ~ '.intro') }}>{{ sub.intro }}</p>{% endif %}
+      {% if sub.paragraphs %}{% for p in sub.paragraphs %}<p{{ ea(sub_path ~ '.paragraphs[' ~ loop.index0 ~ ']') }}>{{ p }}</p>{% endfor %}{% endif %}
+      {% if sub.bullets %}
+      <ul>{% for b in sub.bullets %}<li{{ ea(sub_path ~ '.bullets[' ~ loop.index0 ~ ']') }}>{{ b }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
