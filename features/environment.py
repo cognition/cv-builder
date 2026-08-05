@@ -34,13 +34,10 @@ def before_all(context: Any) -> None:
     os.environ["SNIPPETS_DB"] = str(db_path)
     os.environ["RESUME_IMPORTS_DIR"] = str(imports_dir)
 
-    # Isolate master CV + backups so mode=master confirm cannot mutate repo data.yaml.
+    # Isolate the bootstrap master CV so DB-backed imports cannot mutate repo data.yaml.
     data_copy = context._bdd_tmpdir / "data.yaml"
     shutil.copy2(REPO_ROOT / "cv" / "web" / "data.yaml", data_copy)
-    backups_dir = context._bdd_tmpdir / "backups"
-    backups_dir.mkdir(parents=True, exist_ok=True)
     context._bdd_data_file = data_copy
-    context._bdd_backups_dir = backups_dir
 
     # Variants must stay under the real repo root so relative_to(REPO_ROOT) works.
     variants_dir = REPO_ROOT / "cv" / "variants" / "_behave_tmp"
@@ -107,13 +104,6 @@ def before_all(context: Any) -> None:
     import cvweb
 
     cvweb.DATA_FILE = data_copy
-    namespace["BACKUPS_DIR"] = backups_dir
-    confirm = namespace.get("api_confirm_import")
-    if confirm is not None:
-        confirm.__globals__["BACKUPS_DIR"] = backups_dir
-    backup_fn = namespace.get("_backup_master_yaml")
-    if backup_fn is not None:
-        backup_fn.__globals__["BACKUPS_DIR"] = backups_dir
 
     app = namespace["app"]
     app.config["TESTING"] = True

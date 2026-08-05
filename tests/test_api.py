@@ -229,6 +229,44 @@ class TestApiEndpoints:
         assert "Saved only in DB" in _master_text(api_app)
         assert _master_text(api_app) != master_before
 
+    def test_pin_create_list_restore_and_delete(self, api_app: dict[str, Any]) -> None:
+        """Pin APIs should snapshot, restore, list, and delete master versions."""
+        client = api_app["client"]
+        store = api_app["document_store"]
+        before = _master_text(api_app)
+
+        created = client.post("/api/pins", json={"document": "master", "label": "v1"})
+
+        assert created.status_code == 200
+        pin_id = created.get_json()["id"]
+        listed = client.get("/api/pins?document=master")
+        assert listed.status_code == 200
+        assert [pin["label"] for pin in listed.get_json()] == ["v1"]
+
+        saved = client.post(
+            "/api/save", json=[{"path": "bio[0]", "value": "After pin"}]
+        )
+        assert saved.status_code == 200
+        changed = store.get_master()
+        assert changed is not None
+        assert "After pin" in changed.content_yaml
+
+        restored = client.post(f"/api/pins/{pin_id}/restore")
+
+        assert restored.status_code == 200
+        master = store.get_master()
+        assert master is not None
+        assert master.content_yaml == before
+        assert master.id is not None
+        labels = [pin.label for pin in store.list_pins(master.id)]
+        assert f"before-restore:{pin_id}" in labels
+
+        deleted = client.delete(f"/api/pins/{pin_id}")
+        assert deleted.status_code == 200
+        listed_after_delete = client.get("/api/pins?document=master").get_json()
+        remaining = [pin["id"] for pin in listed_after_delete]
+        assert pin_id not in remaining
+
     def test_structure_replace_text(
         self, client: "FlaskClient", api_app: dict[str, Any]
     ) -> None:
@@ -741,14 +779,14 @@ class TestResumeImportApiEndpoints:
         skills = client.get("/api/snippets?category=skill&tag=import")
         assert len(skills.get_json()) == 3
 
-    def test_confirm_master_mode_updates_yaml_and_preserves_person(
-        self, client: "FlaskClient"
+    def test_confirm_master_mode_updates_db_and_pins(
+        self, client: "FlaskClient", api_app: dict[str, Any]
     ) -> None:
+        """Master imports should update DB content and create a safety pin."""
         from io import BytesIO
 
-        import cvweb
-
-        before = cvweb.load_data()
+        before_file = api_app["data_file"].read_text(encoding="utf-8")
+        before = _master_data(api_app)
         original_first = before["person"]["first_name"]
 
         uploaded = client.post(
@@ -766,14 +804,20 @@ class TestResumeImportApiEndpoints:
         assert body["mode"] == "master"
         assert body["master_updated"] is True
         assert body["snippet_count"] > 0
-        assert body["backup_path"].startswith("data/backups/data.yaml.")
-        assert (cvweb.REPO_ROOT / body["backup_path"]).is_file()
+        assert "backup_path" not in body
+        assert api_app["data_file"].read_text(encoding="utf-8") == before_file
 
-        after = cvweb.load_data()
+        after = _master_data(api_app)
         assert after["person"]["first_name"] == original_first
         assert after["bio"]  # non-empty from SAMPLE_RESUME_TEXT summary
         assert after["experience"]
         assert after["experience"][0]["company"] or after["experience"][0]["role"]
+        master = api_app["document_store"].get_master()
+        assert master is not None
+        assert any(
+            pin.label == f"before-import:{token}"
+            for pin in api_app["document_store"].list_pins(master.id)
+        )
         skills = client.get("/api/snippets?tag=import")
         assert len(skills.get_json()) == body["snippet_count"]
 
@@ -814,68 +858,6 @@ class TestResumeImportApiEndpoints:
         body = confirmed.get_json()
         assert body["mode"] == "library"
         assert body["master_updated"] is False
-        assert cvweb.read_data_text() == before_text
-
-    def test_backup_master_yaml_uses_unique_paths(
-        self, api_app: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Backups created in the same second should never overwrite each other."""
-        from datetime import datetime, timezone
-
-        import cvweb
-
-        class FrozenDatetime:
-            """Provide a stable timestamp for backup collision testing."""
-
-            @classmethod
-            def now(cls, tz: object) -> datetime:
-                """Return the same UTC timestamp for every backup call."""
-                return datetime(2026, 8, 4, 17, 0, 0, tzinfo=timezone.utc)
-
-        monkeypatch.setitem(
-            api_app["_backup_master_yaml"].__globals__, "datetime", FrozenDatetime
-        )
-
-        first = api_app["_backup_master_yaml"]()
-        second = api_app["_backup_master_yaml"]()
-
-        assert first != second
-        assert (cvweb.REPO_ROOT / first).is_file()
-        assert (cvweb.REPO_ROOT / second).is_file()
-
-    def test_confirm_master_backup_failure_preserves_yaml(
-        self,
-        client: "FlaskClient",
-        api_app: dict[str, Any],
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """A backup failure should stop master import before data.yaml changes."""
-        from io import BytesIO
-
-        import cvweb
-
-        def fail_backup() -> Path:
-            """Raise the same error shape as a failed filesystem backup."""
-            raise OSError("backup unavailable")
-
-        before_text = cvweb.read_data_text()
-        monkeypatch.setitem(
-            api_app["api_confirm_import"].__globals__, "_backup_master_yaml", fail_backup
-        )
-        uploaded = client.post(
-            "/api/imports",
-            data={"file": (BytesIO(SAMPLE_RESUME_TEXT.encode()), "resume.txt")},
-            content_type="multipart/form-data",
-        )
-        token = uploaded.get_json()["token"]
-
-        confirmed = client.post(
-            f"/api/imports/{token}/confirm",
-            json={"mode": "master"},
-        )
-
-        assert confirmed.status_code == 500
-        assert "backup unavailable" in confirmed.get_json()["error"]
         assert cvweb.read_data_text() == before_text
 
     def test_duplicate_candidates_are_flagged(self, client: "FlaskClient") -> None:

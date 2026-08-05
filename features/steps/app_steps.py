@@ -469,10 +469,11 @@ def step_master_person_first_name_unchanged(context: Context) -> None:
 
 @then("the master CV has non-empty bio content")
 def step_master_bio_nonempty(context: Context) -> None:
-    """Assert master import wrote non-empty biography content."""
-    import cvweb
-
-    data = cvweb.load_data()
+    """Assert master import wrote non-empty DB-backed biography content."""
+    store = context.app_ns["_document_store"]()
+    document = store.get_master()
+    assert document is not None, "expected a master CV document"
+    data = context.app_ns["cvweb"].load_data_text(document.content_yaml)
     assert data.get("bio"), "expected imported bio content"
 
 

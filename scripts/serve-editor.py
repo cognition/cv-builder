@@ -27,7 +27,6 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -109,7 +108,6 @@ IMPORTS_DIR = Path(
     os.environ.get("RESUME_IMPORTS_DIR", str(cvweb.REPO_ROOT / "data" / "imports"))
 )
 STAGING_DIR = IMPORTS_DIR / "staging"
-BACKUPS_DIR = cvweb.REPO_ROOT / "data" / "backups"
 MAX_IMPORT_BYTES = 25 * 1024 * 1024
 IMPORT_SECTIONS = ("profile", "experience", "skills", "education")
 IMPORT_MODES = frozenset({"library", "master"})
@@ -184,6 +182,22 @@ def _export_document_data(
         label = "Master CV" if kind == "master" else f"CV variant {document.name!r}"
         raise ValueError(f"{label} YAML must be a mapping")
     return document, data
+
+
+def _document_for_pin(store: DocumentStore, payload: dict[str, Any]) -> CvDocument:
+    """Return the requested pin target document."""
+    kind = str(payload.get("document", "master")).strip().lower()
+    if kind not in EXPORT_DOCUMENT_KINDS:
+        raise ValueError("document must be one of: master, variant")
+    if kind == "master":
+        return _master_document(store)
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        raise ValueError("name is required for variant pins")
+    document = store.get_variant(name)
+    if document is None:
+        raise LookupError(f"CV variant {name!r} is not available")
+    return document
 
 
 def _default_export_path(document: CvDocument, export_format: str) -> Path:
@@ -570,6 +584,65 @@ def api_redo() -> Any:
         return jsonify(error="nothing to redo"), 400
     result = store.redo(document.id)
     return jsonify(ok=True, reload=True, **result)
+
+
+@app.get("/api/pins")
+def api_list_pins() -> Any:
+    """List saved pins for a master or variant CV document."""
+    store = _document_store()
+    try:
+        document = _document_for_pin(store, dict(request.args))
+    except LookupError as exc:
+        return jsonify(error=str(exc)), 404
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    if document.id is None:
+        return jsonify(error="CV document id is required"), 500
+    return jsonify([pin.to_dict() for pin in store.list_pins(document.id)])
+
+
+@app.post("/api/pins")
+def api_create_pin() -> Any:
+    """Create a named pin for a master or variant CV document."""
+    payload = request.get_json(force=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify(error="payload must be an object"), 400
+    label = str(payload.get("label", "")).strip()
+    if not label:
+        return jsonify(error="label is required"), 400
+    store = _document_store()
+    try:
+        document = _document_for_pin(store, payload)
+        if document.id is None:
+            return jsonify(error="CV document id is required"), 500
+        pin = store.create_pin(document.id, label)
+    except LookupError as exc:
+        return jsonify(error=str(exc)), 404
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(pin.to_dict())
+
+
+@app.post("/api/pins/<int:pin_id>/restore")
+def api_restore_pin(pin_id: int) -> Any:
+    """Restore a saved pin, auto-pinning the current state first."""
+    store = _document_store()
+    try:
+        pin = store.restore_pin(pin_id)
+    except KeyError as exc:
+        return jsonify(error=str(exc)), 404
+    return jsonify(ok=True, reload=True, pin=pin.to_dict())
+
+
+@app.delete("/api/pins/<int:pin_id>")
+def api_delete_pin(pin_id: int) -> Any:
+    """Delete a saved pin."""
+    store = _document_store()
+    try:
+        store.delete_pin(pin_id)
+    except KeyError as exc:
+        return jsonify(error=str(exc)), 404
+    return jsonify(ok=True)
 
 
 @app.post("/api/export")
@@ -997,34 +1070,6 @@ def _import_candidates_with_duplicates(
     return candidates
 
 
-def _backup_master_yaml() -> Path:
-    """Write a unique UTC timestamped backup of data.yaml under data/backups/.
-
-    Returns:
-        Path relative to the repo root (posix) for API responses.
-
-    Raises:
-        OSError: If the backup directory or file cannot be written.
-    """
-    BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    source_text = cvweb.read_data_text()
-    for _ in range(10):
-        relative = (
-            Path("data")
-            / "backups"
-            / f"data.yaml.{stamp}.{secrets.token_hex(4)}.bak"
-        )
-        absolute = cvweb.REPO_ROOT / relative
-        try:
-            with absolute.open("x", encoding="utf-8") as handle:
-                handle.write(source_text)
-        except FileExistsError:
-            continue
-        return relative
-    raise FileExistsError("could not create unique data.yaml backup path")
-
-
 @app.post("/api/imports")
 def api_upload_import() -> Any:
     """Stage an uploaded resume file and return its parsed preview.
@@ -1088,16 +1133,17 @@ def api_confirm_import(token: str) -> Any:
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
 
-    backup_rel: Optional[Path] = None
     if mode == "master":
-        before = cvweb.read_data_text()
+        store = _document_store()
         try:
-            backup_rel = _backup_master_yaml()
-        except OSError as exc:
-            return jsonify(error=str(exc)), 500
-        patched = apply_resume_to_master(cvweb.load_data(), resume, enabled)
-        _history().push_before_change("import-master", text=before)
-        cvweb.save_data(patched)
+            document, data = _master_data(store)
+        except (LookupError, ValueError) as exc:
+            return jsonify(error=str(exc)), 404
+        if document.id is None:
+            return jsonify(error="Master CV document id is required"), 500
+        store.create_pin(document.id, f"before-import:{token}")
+        patched = apply_resume_to_master(data, resume, enabled)
+        store.upsert_master(cvweb.dump_data_text(patched))
 
     database = _database()
     created = 0
@@ -1138,8 +1184,6 @@ def api_confirm_import(token: str) -> Any:
         "mode": mode,
         "master_updated": mode == "master",
     }
-    if mode == "master" and backup_rel is not None:
-        result["backup_path"] = backup_rel.as_posix()
     return jsonify(**result)
 
 
