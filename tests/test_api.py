@@ -282,6 +282,56 @@ class TestApiEndpoints:
         assert resp.status_code == 200
         assert resp.get_json()["can_undo"] is False
 
+    def test_edit_page_without_master_returns_404(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """GET /cv/web/edit should 404 when bootstrap finds no Master CV."""
+        repo_root = tmp_path / "repo"
+        web = repo_root / "cv" / "web"
+        web.mkdir(parents=True)
+        (repo_root / "cv" / "variants").mkdir(parents=True)
+
+        db_path = tmp_path / "api.db"
+        monkeypatch.setenv("SNIPPETS_DB", str(db_path))
+
+        scripts = Path(__file__).resolve().parents[1] / "scripts"
+        src = Path(__file__).resolve().parents[1] / "src"
+        real_web = Path(__file__).resolve().parents[1] / "cv" / "web"
+        monkeypatch.syspath_prepend(str(scripts))
+        monkeypatch.syspath_prepend(str(src))
+
+        import cvweb
+
+        monkeypatch.setattr(cvweb, "REPO_ROOT", repo_root)
+        monkeypatch.setattr(cvweb, "WEB_DIR", real_web)
+        monkeypatch.setattr(cvweb, "DATA_FILE", web / "data.yaml")
+
+        sys.modules.pop("serve-editor", None)
+        ns = runpy.run_path(str(scripts / "serve-editor.py"))
+        monkeypatch.setattr(ns["cvweb"], "REPO_ROOT", repo_root)
+        monkeypatch.setattr(ns["cvweb"], "WEB_DIR", real_web)
+        monkeypatch.setattr(
+            ns["cvweb"], "DATA_FILE", web / "data.yaml"
+        )
+
+        database = SnippetDatabase(db_path)
+        database.ensure_schema()
+        document_store = DocumentStore(database)
+        document_store.bootstrap_from_filesystem(repo_root)
+        assert document_store.get_master() is None
+
+        app = ns["app"]
+        app.config["TESTING"] = True
+        client = app.test_client()
+
+        edit = client.get("/cv/web/edit")
+        assert edit.status_code == 404
+        assert b"Master CV unavailable" in edit.data
+
+        person = client.get("/api/person")
+        assert person.status_code == 404
+        assert "Master CV document is not available" in person.get_json()["error"]
+
     def test_variants_list_and_delete(
         self, client: "FlaskClient", repo_fixture: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

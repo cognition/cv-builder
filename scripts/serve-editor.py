@@ -59,7 +59,7 @@ from cvbuilder.resume_extractor import (
 )
 from cvbuilder.resume_to_master import apply_resume_to_master
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, make_response, request, send_from_directory
 from jinja2 import (
     Environment as JinjaEnvironment,
     FileSystemLoader as JinjaFSLoader,
@@ -160,6 +160,24 @@ def _master_data(store: DocumentStore) -> tuple[CvDocument, Any]:
     return document, data
 
 
+def _master_unavailable_html(exc: Exception) -> str:
+    """Render a Studio shell page when the Master CV is missing or invalid."""
+    template = _APP_ENV.from_string(
+        '{% extends "shell/base.html" %}'
+        '{% block title %}CV Studio — Master CV unavailable{% endblock %}'
+        '{% block content %}'
+        '<div class="empty-state"><h2>Master CV unavailable</h2>'
+        "<p>{{ message }}</p></div>"
+        "{% endblock %}"
+    )
+    return template.render(
+        message=str(exc),
+        crumb="MASTER CV",
+        title="Master CV unavailable",
+        active="master",
+    )
+
+
 def _history_status(store: DocumentStore, document: CvDocument) -> dict[str, Any]:
     """Return history status for a persisted document."""
     if document.id is None:
@@ -237,10 +255,13 @@ def home_page() -> str:
 
 
 @app.get("/cv/web/edit")
-def edit_page() -> str:
+def edit_page() -> Any:
     """Serve Master CV inside the Studio shell."""
     store = _document_store()
-    _, data = _master_data(store)
+    try:
+        _, data = _master_data(store)
+    except (LookupError, ValueError) as exc:
+        return make_response(_master_unavailable_html(exc), 404)
     body = cvweb.render_cv_body(data=data, edit_mode=True)
     return _render_page(
         "pages/master.html",
