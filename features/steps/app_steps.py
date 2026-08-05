@@ -72,11 +72,13 @@ def step_nav_active(context: Context, active: str) -> None:
     soup = page(context)
     active_link = soup.select_one("a.nav-link.active")
     assert active_link is not None, "no active nav-link found"
+    key = NAV_ACTIVE.get(active.lower(), active.lower())
     href = active_link.get("href", "")
+    expected = resolve_path(key if key in NAV_ACTIVE.values() else active)
+    # NAV_ACTIVE maps labels → keys; resolve_path wants page names.
     expected_by_key = {
         "home": "/cv/web/",
         "master": "/cv/web/edit",
-        "working-draft": "/cv/web/edit",
         "details": "/cv/web/details",
         "import": "/cv/web/import",
         "tailor": "/cv/web/build",
@@ -86,12 +88,7 @@ def step_nav_active(context: Context, active: str) -> None:
         "versions": "/cv/web/variants",
         "connect": "/cv/web/connect",
     }
-    mapped = NAV_ACTIVE.get(active.lower(), active.lower())
-    want = expected_by_key.get(active.lower())
-    if want is None:
-        want = expected_by_key.get(mapped)
-    if want is None:
-        want = resolve_path(active)
+    want = expected_by_key.get(active.lower(), expected)
     assert href == want or href.rstrip("/") == want.rstrip("/"), (
         f"active nav href={href!r}, expected {want!r} for {active!r}"
     )

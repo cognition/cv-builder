@@ -3,6 +3,8 @@
 
   const list = document.getElementById("version-list");
   const statusEl = document.getElementById("versions-status");
+  const previewPane = document.getElementById("preview-pane");
+  const previewFrame = document.getElementById("preview-frame");
   const toast = document.getElementById("toast");
 
   function setStatus(message) {
@@ -37,80 +39,77 @@
     }
   }
 
-  async function loadPins() {
+  async function loadVariants() {
     setStatus("Loading…");
-    const resp = await fetch("/api/pins?document=working");
-    if (!resp.ok) throw new Error("failed to load pins");
-    const pins = await resp.json();
+    const resp = await fetch("/api/variants");
+    if (!resp.ok) throw new Error("failed to load variants");
+    const variants = await resp.json();
     list.innerHTML = "";
-    if (!pins.length) {
+    if (!variants.length) {
       list.innerHTML =
-        '<p class="empty-row">No pinned versions yet. <a href="/cv/web/build">Tailor a CV</a> and save with a pin label.</p>';
+        '<p class="empty-row">No composed versions yet. <a href="/cv/web/build">Tailor a new CV</a> to create one.</p>';
       setStatus("No versions.");
       return;
     }
-    pins.forEach((item) => {
+    variants.forEach((item) => {
       const row = document.createElement("div");
       row.className = "version-row";
-      const selectionCount = (item.selections || []).length;
       row.innerHTML = `
-          <label class="pill">PIN</label>
+        <label class="pill ${item.pdf ? "" : "draft"}">${item.pdf ? "READY" : "DRAFT"}</label>
         <div>
-          <b>${escapeHtml(item.label)}</b><br>
-          <span class="meta">Pinned ${escapeHtml(formatWhen(item.created_at))}
-            · ${selectionCount} tailor selection(s)</span>
+          <b>${escapeHtml(item.name)}</b><br>
+          <span class="meta">Updated ${escapeHtml(formatWhen(item.updated_at))}</span>
         </div>
         <div class="row-actions">
-          <button type="button" data-action="start">Use as starting point</button>
+          <button type="button" data-action="preview" ${item.pdf ? "" : "disabled"}>Preview</button>
+          <button type="button" data-action="render">Re-render</button>
           <button type="button" data-action="delete">Delete</button>
         </div>
       `;
       row.querySelectorAll("button").forEach((btn) => {
         btn.addEventListener("click", () => {
           const action = btn.getAttribute("data-action");
-          if (action === "start") {
-            loadIntoDraft(item.id, item.label).catch((err) =>
-              setStatus("Error: " + err.message)
-            );
+          if (action === "preview") {
+            previewPane.classList.add("open");
+            previewFrame.src = "/" + item.pdf + "?t=" + Date.now();
+          } else if (action === "render") {
+            renderVariant(item.name).catch((err) => setStatus("Error: " + err.message));
           } else if (action === "delete") {
-            deletePin(item.id, item.label).catch((err) =>
-              setStatus("Error: " + err.message)
-            );
+            deleteVariant(item.name).catch((err) => setStatus("Error: " + err.message));
           }
         });
       });
       list.appendChild(row);
     });
-    setStatus(`${pins.length} version(s).`);
+    setStatus(`${variants.length} version(s).`);
   }
 
-  async function loadIntoDraft(pinId, label) {
-    setStatus(`Loading ${label} into Tailor…`);
-    const resp = await fetch("/api/pins/" + encodeURIComponent(pinId) + "/load-into-draft", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    const body = await resp.json();
-    if (!resp.ok) throw new Error(body.error || "load failed");
-    showToast(
-      body.warning
-        ? body.warning
-        : `Draft "${body.draft_name}" ready — opening Tailor.`
+  async function renderVariant(name) {
+    setStatus(`Rendering ${name}…`);
+    const resp = await fetch(
+      "/api/variants/" + encodeURIComponent(name) + "/render",
+      { method: "POST" }
     );
-    window.location.href = "/cv/web/build";
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || "render failed");
+    if (result.pdf) {
+      previewPane.classList.add("open");
+      previewFrame.src = "/" + result.pdf + "?t=" + Date.now();
+    }
+    await loadVariants();
+    showToast(`Re-rendered ${name}.`);
   }
 
-  async function deletePin(pinId, label) {
-    if (!confirm(`Delete pin “${label}”?`)) return;
-    const resp = await fetch("/api/pins/" + encodeURIComponent(pinId), {
+  async function deleteVariant(name) {
+    if (!confirm(`Delete version “${name}”? This removes its folder.`)) return;
+    const resp = await fetch("/api/variants/" + encodeURIComponent(name), {
       method: "DELETE",
     });
     const result = await resp.json();
     if (!resp.ok) throw new Error(result.error || "delete failed");
-    await loadPins();
-    showToast(`Deleted ${label}.`);
+    await loadVariants();
+    showToast(`Deleted ${name}.`);
   }
 
-  loadPins().catch((err) => setStatus("Error: " + err.message));
+  loadVariants().catch((err) => setStatus("Error: " + err.message));
 })();

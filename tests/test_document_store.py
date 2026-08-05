@@ -68,6 +68,18 @@ class TestDocumentStore:
         status = store.history_status(doc.id)
         assert status["can_undo"] is True
 
+    def test_restore_pin_creates_before_restore_pin(self, tmp_path: Path) -> None:
+        """Restoring a pin preserves the pre-restore state as a labelled pin."""
+        store = _store(tmp_path)
+        doc = store.upsert_master("bio:\n  - pinned\n")
+        pin = store.create_pin(doc.id, "checkpoint")
+        store.upsert_master("bio:\n  - later\n")
+
+        store.restore_pin(pin.id)
+
+        labels = [saved_pin.label for saved_pin in store.list_pins(doc.id)]
+        assert f"before-restore:{pin.id}" in labels
+
     def test_variant_upsert_and_list(self, tmp_path: Path) -> None:
         """Variants can be saved and listed by name."""
         store = _store(tmp_path)

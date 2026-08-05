@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 import sys
 from copy import deepcopy
-from io import StringIO
 from pathlib import Path
 from typing import Any, Optional
 
@@ -91,42 +90,6 @@ class CvComposer:
             ),
             "selection_count": len(items),
         }
-
-    def build_document_from_selections(
-        self,
-        base: dict[str, Any],
-        selections: list[dict[str, Any]] | list[SelectionItem],
-    ) -> dict[str, Any]:
-        """Assemble a document dict from selections without writing files.
-
-        Args:
-            base: Starting data.yaml-shaped mapping (person fields preserved).
-            selections: Ordered Tailor selections.
-
-        Returns:
-            A composed document dictionary.
-        """
-        items = self._normalise_selections(selections)
-        return self._build_document(base, items)
-
-    @staticmethod
-    def dumps_yaml(document: dict[str, Any]) -> str:
-        """Serialise a document mapping to YAML text."""
-        buf = StringIO()
-        _YAML.dump(document, buf)
-        return buf.getvalue()
-
-    @staticmethod
-    def loads_yaml(text: str) -> dict[str, Any]:
-        """Parse a YAML document mapping from text.
-
-        Raises:
-            ValueError: If the payload is not a mapping.
-        """
-        data = _YAML.load(StringIO(text)) or {}
-        if not isinstance(data, dict):
-            raise ValueError("CV document YAML must be a mapping")
-        return data
 
     def _build_document(
         self, base: dict[str, Any], items: list[SelectionItem]
