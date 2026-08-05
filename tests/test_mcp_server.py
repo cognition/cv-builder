@@ -166,3 +166,38 @@ class TestReseedAndCompose:
 
         variants = mcp_server.list_variants()
         assert any(v["name"] == "mcp-test-variant" for v in variants)
+
+
+class TestLibraryOpsTools:
+    """MCP wrappers for audit / batch upsert / batch delete."""
+
+    def test_audit_library_counts(self) -> None:
+        """audit_library returns category counts for created snippets."""
+        mcp_server.create_snippet(
+            category="skill", content="A" * 40, tags=["python"]
+        )
+        report = mcp_server.audit_library()
+        assert report["counts_by_category"].get("skill") == 1
+
+    def test_upsert_snippets_dry_run_default(self) -> None:
+        """upsert_snippets defaults to dry_run and does not write."""
+        result = mcp_server.upsert_snippets(
+            [
+                {
+                    "category": "bio",
+                    "tags": ["bio"],
+                    "variants": {"standard": "B" * 40},
+                }
+            ]
+        )
+        assert result["dry_run"] is True
+        assert mcp_server.list_snippets() == []
+
+    def test_delete_snippets_apply(self) -> None:
+        """delete_snippets(dry_run=False) removes the row."""
+        created = mcp_server.create_snippet(
+            category="bio", content="C" * 40, tags=["bio"]
+        )
+        result = mcp_server.delete_snippets([created["id"]], dry_run=False)
+        assert result["counts"]["deleted"] == 1
+        assert mcp_server.list_snippets() == []
