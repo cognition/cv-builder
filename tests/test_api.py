@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Generator
 import pytest
 
 from cvbuilder.database import SnippetDatabase
+from cvbuilder.document_store import DocumentStore
 from cvbuilder.models import DetailLevel, Snippet, SnippetVariant
 
 if TYPE_CHECKING:
@@ -132,6 +133,66 @@ class TestApiEndpoints:
         assert deleted.status_code == 200
         missing = client.get("/api/drafts/demo")
         assert missing.status_code == 404
+
+    def test_put_draft_with_apply_updates_working_document(
+        self,
+        client: "FlaskClient",
+        repo_fixture: Path,
+    ) -> None:
+        """PUT apply=true must update working content_yaml without variants."""
+        import os
+
+        variants_dir = repo_fixture / "cv" / "variants"
+        before = list(variants_dir.glob("*/data.yaml"))
+        snippets = client.get("/api/snippets").get_json()
+        snippet_id = snippets[0]["id"]
+        selections = [
+            {
+                "snippet_id": snippet_id,
+                "detail_level": "standard",
+                "section": "skill",
+            }
+        ]
+        resp = client.put(
+            "/api/drafts/demo",
+            json={"selections": selections, "apply": True},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["name"] == "demo"
+        assert body["applied"] is True
+        store = DocumentStore(SnippetDatabase(Path(os.environ["SNIPPETS_DB"])))
+        working = store.get_working()
+        assert working is not None
+        assert "Python development" in working.content_yaml
+        assert "Test" in working.content_yaml
+        assert list(variants_dir.glob("*/data.yaml")) == before
+
+    def test_post_draft_apply_reapplies_saved_selections(
+        self, client: "FlaskClient"
+    ) -> None:
+        """POST /api/drafts/<name>/apply rebuilds working from stored selections."""
+        import os
+
+        snippets = client.get("/api/snippets").get_json()
+        snippet_id = snippets[0]["id"]
+        selections = [
+            {
+                "snippet_id": snippet_id,
+                "detail_level": "standard",
+                "section": "skill",
+            }
+        ]
+        saved = client.put("/api/drafts/demo", json={"selections": selections})
+        assert saved.status_code == 200
+        resp = client.post("/api/drafts/demo/apply", json={})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        store = DocumentStore(SnippetDatabase(Path(os.environ["SNIPPETS_DB"])))
+        working = store.get_working()
+        assert working is not None
+        assert "Python development" in working.content_yaml
 
     def test_match_endpoint(self, client: "FlaskClient") -> None:
         """POST /api/match should return ranked hits for known terms."""

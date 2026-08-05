@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import cvweb
 from cvbuilder.composer import CvComposer
 from cvbuilder.database import SnippetDatabase
+from cvbuilder.document_store import DocumentStore
 from cvbuilder.importer import SnippetImporter
 from cvbuilder.matcher import SnippetMatcher
 from cvbuilder.models import (
@@ -56,6 +57,7 @@ from cvbuilder.resume_extractor import (
     parse_resume,
 )
 from cvbuilder.resume_to_master import apply_resume_to_master
+from cvbuilder.working_draft import WorkingDraftApplier
 
 from flask import Flask, jsonify, request, send_from_directory
 from jinja2 import (
@@ -131,6 +133,25 @@ def _database() -> SnippetDatabase:
     database = SnippetDatabase(path)
     database.ensure_schema()
     return database
+
+
+def _document_store() -> DocumentStore:
+    """Return a DocumentStore, bootstrapping the working document once.
+
+    When no working/master row exists, seed from ``cvweb.DATA_FILE`` if present.
+    """
+    database = _database()
+    store = DocumentStore(database)
+    if store.get_working() is None:
+        data_file = Path(cvweb.DATA_FILE)
+        if data_file.is_file():
+            store.upsert_working(data_file.read_text(encoding="utf-8"))
+        else:
+            store.upsert_working(
+                "person: {}\nbio: []\nskills:\n  technical: []\n"
+                "  functional: []\nexperience: []\neducation: []\n"
+            )
+    return store
 
 
 def _safe_name(name: str) -> str:
@@ -534,17 +555,60 @@ def api_get_draft(name: str) -> Any:
 
 @app.put("/api/drafts/<name>")
 def api_save_draft(name: str) -> Any:
-    """Create or update a named draft selection."""
+    """Create or update a named draft; optionally apply into Working Draft."""
     payload = request.get_json(force=True) or {}
     selections = payload.get("selections") or []
     if not isinstance(selections, list):
         return jsonify(error="selections must be a list"), 400
+    apply = bool(payload.get("apply"))
+    pin_label = payload.get("pin_label")
     database = _database()
     try:
         draft = database.save_draft(name, selections)
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
-    return jsonify(draft.to_dict())
+    result = draft.to_dict()
+    result["applied"] = False
+    if apply:
+        if not selections:
+            return jsonify(error="selections must be a non-empty list"), 400
+        applier = WorkingDraftApplier(
+            database, _document_store(), cvweb.REPO_ROOT
+        )
+        try:
+            applied = applier.apply_selections(
+                selections,
+                history_label=f"draft:{name}",
+                pin_label=str(pin_label).strip() if pin_label else None,
+            )
+        except (ValueError, KeyError) as exc:
+            return jsonify(error=str(exc)), 400
+        result["applied"] = True
+        result["apply"] = applied
+    return jsonify(result)
+
+
+@app.post("/api/drafts/<name>/apply")
+def api_apply_draft(name: str) -> Any:
+    """Re-apply a saved draft's selections into the Working Draft CV."""
+    payload = request.get_json(force=True) or {}
+    pin_label = payload.get("pin_label")
+    database = _database()
+    draft = database.get_draft(name)
+    if draft is None:
+        return jsonify(error="not found"), 404
+    applier = WorkingDraftApplier(
+        database, _document_store(), cvweb.REPO_ROOT
+    )
+    try:
+        applied = applier.apply_selections(
+            draft.selections,
+            history_label=f"draft:{name}",
+            pin_label=str(pin_label).strip() if pin_label else None,
+        )
+    except (ValueError, KeyError) as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify({"ok": True, "name": name, **applied})
 
 
 @app.delete("/api/drafts/<name>")
