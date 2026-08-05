@@ -51,14 +51,15 @@ Requires `google-chrome` or `chromium` on PATH for PDF export
 ### Editing in the browser
 
 `scripts/serve-editor.py` serves one app, sharing a common nav/header
-shell (`cv/web/src/shell/`) across every page below except `/cv/web/edit`,
-which renders the CV document itself:
+shell (`cv/web/src/shell/`) across every page below, including Master CV
+(`/cv/web/edit`):
 
 - **`/cv/web/`** — Home dashboard: live snippet/version counts and
   recent versions.
-- **`/cv/web/edit`** — click any text to edit it in place; hover controls
-  add/reorder/delete list items (bullets, skills, jobs, subsections,
-  education, custom side panels); Save & Preview renders a real PDF.
+- **`/cv/web/edit`** ("Master CV") — click any text to edit it in place
+  inside the shell; hover controls add/reorder/delete list items (bullets,
+  skills, jobs, subsections, education, custom side panels); Save & Preview
+  in the header renders a real PDF.
   Adding a skill/bio paragraph/education entry opens a picker fed from
   the snippet database, with search and duplicate flagging.
 - **`/cv/web/build`** ("Tailor") — paste a job posting to re-rank
