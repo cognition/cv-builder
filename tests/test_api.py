@@ -194,6 +194,45 @@ class TestApiEndpoints:
         assert working is not None
         assert "Python development" in working.content_yaml
 
+    def test_load_pin_into_draft_hydrates_working_and_draft(
+        self, client: "FlaskClient"
+    ) -> None:
+        """Restore pin content, upsert draft from selections_json."""
+        import os
+
+        snippets = client.get("/api/snippets").get_json()
+        snippet_id = snippets[0]["id"]
+        selections = [
+            {
+                "snippet_id": snippet_id,
+                "detail_level": "standard",
+                "section": "skill",
+            }
+        ]
+        created = client.put(
+            "/api/drafts/seed",
+            json={
+                "selections": selections,
+                "apply": True,
+                "pin_label": "ircc-v1",
+            },
+        )
+        assert created.status_code == 200
+        pin_id = created.get_json()["apply"]["pin"]["id"]
+        store = DocumentStore(SnippetDatabase(Path(os.environ["SNIPPETS_DB"])))
+        store.upsert_working("person:\n  first_name: Changed\nbio: []\n")
+        resp = client.post(f"/api/pins/{pin_id}/load-into-draft", json={})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["document_updated"] is True
+        assert body["selections"]
+        draft = client.get(f"/api/drafts/{body['draft_name']}")
+        assert draft.status_code == 200
+        assert draft.get_json()["selections"] == body["selections"]
+        working = store.get_working()
+        assert working is not None
+        assert "Python development" in working.content_yaml
+
     def test_match_endpoint(self, client: "FlaskClient") -> None:
         """POST /api/match should return ranked hits for known terms."""
         resp = client.post("/api/match", json={"text": "Need strong Python skills"})

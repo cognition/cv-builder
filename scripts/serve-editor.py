@@ -1174,6 +1174,105 @@ def _list_variants() -> list[dict[str, Any]]:
     return variants
 
 
+def _working_document_id(store: DocumentStore) -> int:
+    """Return the working document id, bootstrapping if needed."""
+    working = store.get_working()
+    if working is None or working.id is None:
+        raise ValueError("working draft document is missing")
+    return working.id
+
+
+@app.get("/api/pins")
+def api_list_pins() -> Any:
+    """List pins for the working document (``document=working|master``)."""
+    document = str(request.args.get("document") or "working").strip().lower()
+    if document not in {"working", "master"}:
+        return jsonify(error="only the working document is supported"), 400
+    store = _document_store()
+    try:
+        document_id = _working_document_id(store)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    pins = store.list_pins(document_id)
+    return jsonify([pin.to_dict() for pin in pins])
+
+
+@app.post("/api/pins")
+def api_create_pin() -> Any:
+    """Create a pin on the working document."""
+    payload = request.get_json(force=True) or {}
+    label = str(payload.get("label", "")).strip()
+    selections = payload.get("selections")
+    if selections is not None and not isinstance(selections, list):
+        return jsonify(error="selections must be a list"), 400
+    store = _document_store()
+    try:
+        document_id = _working_document_id(store)
+        pin = store.create_pin(
+            document_id,
+            label,
+            selections=list(selections) if isinstance(selections, list) else None,
+        )
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(pin.to_dict()), 201
+
+
+@app.post("/api/pins/<int:pin_id>/restore")
+def api_restore_pin(pin_id: int) -> Any:
+    """Restore a pin into the working document."""
+    store = _document_store()
+    try:
+        pin = store.restore_pin(pin_id)
+    except KeyError as exc:
+        return jsonify(error=str(exc)), 404
+    return jsonify(ok=True, pin=pin.to_dict())
+
+
+@app.delete("/api/pins/<int:pin_id>")
+def api_delete_pin(pin_id: int) -> Any:
+    """Delete a saved pin."""
+    store = _document_store()
+    try:
+        store.delete_pin(pin_id)
+    except KeyError as exc:
+        return jsonify(error=str(exc)), 404
+    return jsonify(ok=True)
+
+
+@app.post("/api/pins/<int:pin_id>/load-into-draft")
+def api_pin_load_into_draft(pin_id: int) -> Any:
+    """Restore a pin into Working Draft and recreate a Tailor draft."""
+    payload = request.get_json(force=True) or {}
+    store = _document_store()
+    database = _database()
+    try:
+        pin = store.restore_pin(pin_id)
+    except KeyError as exc:
+        return jsonify(error=str(exc)), 404
+    draft_name = str(payload.get("draft_name") or "").strip()
+    if not draft_name:
+        safe = _safe_name(pin.label)
+        draft_name = f"from-{safe}" if safe else f"from-pin-{pin_id}"
+    selections = list(pin.selections or [])
+    warning = None
+    if not selections:
+        warning = (
+            "Pin has no Tailor selections; Working Draft was restored only."
+        )
+    database.save_draft(draft_name, selections)
+    return jsonify(
+        {
+            "ok": True,
+            "draft_name": draft_name,
+            "selections": selections,
+            "document_updated": True,
+            "selections_restored": bool(selections),
+            "warning": warning,
+        }
+    )
+
+
 @app.get("/api/variants")
 def api_list_variants() -> Any:
     """List composed CV variants under cv/variants/."""
