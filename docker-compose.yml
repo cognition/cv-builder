@@ -5,6 +5,10 @@ services:
       - "127.0.0.1:5057:5057"
       - "127.0.0.1:8765:8765"
     volumes:
+      # Persistent user content: SQLite, uploads, imports, variant exports.
+      - cv_data:/data
+      # Local development: bind-mount the repo so code edits land on the host.
+      # Omit this mount for image-only runs that rely solely on cv_data.
       - .:/app
     environment:
       EDITOR_HOST: "0.0.0.0"
@@ -14,6 +18,11 @@ services:
       MCP_PORT: "8765"
       PYTHONPATH: "/app/src:/app/scripts"
       CHROME_BIN: "/usr/bin/chromium"
-    # Bind-mount keeps data.yaml, generated PDFs, and snippets.db on the host.
-    # Both ports publish to 127.0.0.1 only — same reasoning as the editor:
-    # fine for local personal use, don't widen without adding auth first.
+      CV_DATA_ROOT: "/data"
+      SNIPPETS_DB: "/data/snippets.db"
+      RESUME_IMPORTS_DIR: "/data/imports"
+    # Ports publish to 127.0.0.1 only — fine for local personal use; don't
+    # widen without adding auth first.
+
+volumes:
+  cv_data:

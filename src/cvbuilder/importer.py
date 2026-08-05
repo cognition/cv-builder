@@ -383,11 +383,17 @@ class SnippetImporter:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    """CLI entry point: seed ``data/snippets.db`` from the repository."""
+    """CLI entry point: seed the snippet database from the repository."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     args = list(argv if argv is not None else sys.argv[1:])
     repo_root = Path(__file__).resolve().parents[2]
-    db_path = Path(args[0]) if args else repo_root / "data" / "snippets.db"
+    if args:
+        db_path = Path(args[0])
+    else:
+        from cvbuilder.paths import DataPaths
+
+        db_path = DataPaths(repo_root).snippets_db
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     database = SnippetDatabase(db_path)
     importer = SnippetImporter(database=database, repo_root=repo_root)
     stats = importer.seed()

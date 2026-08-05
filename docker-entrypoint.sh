@@ -1,14 +1,25 @@
 #!/bin/sh
-# Seed the snippet database when missing, start the MCP server in the
-# background (set ENABLE_MCP=0 to skip it), then run the given command
-# (the web editor) in the foreground. SIGTERM/SIGINT stop both together.
+# Ensure the persistent data volume layout exists, seed the snippet database
+# when missing, start the MCP server in the background (set ENABLE_MCP=0 to
+# skip it), then run the given command (the web editor) in the foreground.
+# SIGTERM/SIGINT stop both together.
 set -eu
 
-DB_PATH="${SNIPPETS_DB:-/app/data/snippets.db}"
+CV_DATA_ROOT="${CV_DATA_ROOT:-/data}"
+export CV_DATA_ROOT
+DB_PATH="${SNIPPETS_DB:-${CV_DATA_ROOT}/snippets.db}"
+export SNIPPETS_DB="${DB_PATH}"
+export RESUME_IMPORTS_DIR="${RESUME_IMPORTS_DIR:-${CV_DATA_ROOT}/imports}"
+
+mkdir -p \
+  "${CV_DATA_ROOT}/assets/images" \
+  "${CV_DATA_ROOT}/imports/staging" \
+  "${CV_DATA_ROOT}/cv/variants" \
+  "${CV_DATA_ROOT}/cv/current" \
+  "$(dirname "${DB_PATH}")"
 
 if [ ! -f "$DB_PATH" ]; then
   echo "No snippet database at ${DB_PATH}; seeding from data.yaml and content/…"
-  mkdir -p "$(dirname "$DB_PATH")"
   python3 -m cvbuilder.importer
 fi
 
