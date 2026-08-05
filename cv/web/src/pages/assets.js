@@ -15,10 +15,17 @@
   const modal = document.getElementById("asset-modal");
   const toast = document.getElementById("toast");
 
+  // GitHub / GitLab use monochrome SVG brand marks so the tiles read as
+  // real logos; other contact icons keep compact glyph labels.
+  const GITHUB_MARK =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>';
+  const GITLAB_MARK =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M23.955 13.209l-1.316-4.054-2.623-8.068a.455.455 0 00-.864-.003L16.5 9.147H7.504L4.852 1.084a.455.455 0 00-.863.003L1.366 9.145.046 13.21a.924.924 0 00.331 1.023L12.006 23l11.616-8.767a.92.92 0 00.333-1.024"/></svg>';
+
   const BUILT_IN_ICONS = [
     { name: "LinkedIn", cls: "linkedin", glyph: "in" },
-    { name: "GitHub", cls: "github", glyph: "GH" },
-    { name: "GitLab", cls: "gitlab", glyph: "&#9670;" },
+    { name: "GitHub", cls: "github", glyph: GITHUB_MARK },
+    { name: "GitLab", cls: "gitlab", glyph: GITLAB_MARK },
     { name: "Medium", cls: "medium", glyph: "M" },
     { name: "Instagram", cls: "instagram", glyph: "&#9678;" },
     { name: "Email", cls: "email", glyph: "&#9993;" },

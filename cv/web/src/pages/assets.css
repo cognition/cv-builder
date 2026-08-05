@@ -66,6 +66,7 @@
 
 .icon-grid .asset-card { min-height: 130px; }
 .social { width: 52px; height: 52px; border-radius: 12px; background: #202723; color: #fff; }
+.social svg { width: 28px; height: 28px; display: block; }
 .linkedin { background: #0a66c2; font: 800 22px Arial; }
 .github { background: #24292f; }
 .gitlab { background: #fc6d26; }
