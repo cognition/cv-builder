@@ -90,6 +90,41 @@ CREATE INDEX IF NOT EXISTS idx_drafts_name ON drafts(name);
 CREATE INDEX IF NOT EXISTS idx_questions_source ON questions(source_id);
 CREATE INDEX IF NOT EXISTS idx_question_evidence_question ON question_evidence(question_id);
 CREATE INDEX IF NOT EXISTS idx_resume_imports_created ON resume_imports(created_at);
+
+CREATE TABLE IF NOT EXISTS cv_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    name TEXT,
+    content_yaml TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cv_documents_variant_name
+    ON cv_documents(name) WHERE kind = 'variant';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cv_documents_one_master
+    ON cv_documents(kind) WHERE kind = 'master';
+
+CREATE TABLE IF NOT EXISTS cv_history (
+    document_id INTEGER PRIMARY KEY,
+    undo_json TEXT NOT NULL DEFAULT '[]',
+    redo_json TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(document_id) REFERENCES cv_documents(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cv_pins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    content_yaml TEXT NOT NULL,
+    undo_json TEXT NOT NULL DEFAULT '[]',
+    redo_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(document_id) REFERENCES cv_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_cv_pins_document ON cv_pins(document_id);
 """
 
 

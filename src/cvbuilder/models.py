@@ -201,3 +201,68 @@ class ResumeImport:
             "snippet_count": self.snippet_count,
             "created_at": self.created_at,
         }
+
+
+@dataclass
+class CvDocument:
+    """A master or variant CV document stored as YAML content."""
+
+    kind: str  # "master" | "variant"
+    content_yaml: str
+    name: Optional[str] = None
+    id: Optional[int] = None
+    updated_at: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable representation."""
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "name": self.name,
+            "content_yaml": self.content_yaml,
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass
+class CvHistoryState:
+    """Undo/redo stacks for one CV document."""
+
+    document_id: int
+    undo: list[dict[str, str]]  # {label, text}
+    redo: list[dict[str, str]]
+    updated_at: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable representation."""
+        return {
+            "document_id": self.document_id,
+            "undo": list(self.undo),
+            "redo": list(self.redo),
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass
+class CvPin:
+    """A named snapshot of CV content plus undo/redo state."""
+
+    document_id: int
+    label: str
+    content_yaml: str
+    undo: list[dict[str, str]]
+    redo: list[dict[str, str]]
+    id: Optional[int] = None
+    created_at: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable representation."""
+        return {
+            "id": self.id,
+            "document_id": self.document_id,
+            "label": self.label,
+            "content_yaml": self.content_yaml,
+            "undo": list(self.undo),
+            "redo": list(self.redo),
+            "created_at": self.created_at,
+        }
