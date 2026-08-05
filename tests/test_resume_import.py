@@ -19,7 +19,7 @@ from cvbuilder.resume_extractor import (
 if TYPE_CHECKING:
     pass
 
-SAMPLE_RESUME = """Jordan Rivers
+SAMPLE_RESUME = """Homer Simpson
 Staff Platform Engineer
 
 Summary
@@ -53,12 +53,12 @@ class TestExtractText:
         from docx import Document
 
         document = Document()
-        document.add_paragraph("Jordan Rivers")
+        document.add_paragraph("Homer Simpson")
         document.add_paragraph("Staff Engineer at Acme")
         buf = io.BytesIO()
         document.save(buf)
         text = extract_text("resume.docx", buf.getvalue())
-        assert "Jordan Rivers" in text
+        assert "Homer Simpson" in text
         assert "Staff Engineer at Acme" in text
 
     def test_pptx_extraction(self) -> None:

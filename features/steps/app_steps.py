@@ -368,7 +368,7 @@ def step_home_versions_count(context: Context) -> None:
 def step_upload_resume(context: Context) -> None:
     """POST a multipart sample resume to ``/api/imports``."""
     sample = (
-        "Jordan Rivers\n\n"
+        "Homer Simpson\n\n"
         "Summary\n"
         "Platform leader with a decade of experience building resilient cloud systems.\n\n"
         "Experience\n"

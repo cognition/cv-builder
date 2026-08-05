@@ -1,55 +1,57 @@
 person:
-  first_name: Jordan
-  last_name: Rivers
-  tagline: "Example Title | Example Specialty | Example Focus"
-  quote: "This is placeholder text — replace it with your own tagline or motto."
+  first_name: Homer
+  last_name: Simpson
+  tagline: "Nuclear Safety Inspector | Doughnut Enthusiast | Family Man"
+  quote: "I am so smart! S-M-R-T… I mean S-M-A-R-T!"
   photo: "../../assets/images/placeholder-headshot.png"
-  email: jordan.rivers@example.com
-  mobile: "555-0100"
+  email: homer.simpson@springfield.example
+  mobile: "555-0113"
   address:
-    city: Example City
+    city: Springfield
     region: ''
     country: Example Country
     postal_code: ''
-    street: ''
+    street: '742 Evergreen Terrace'
     display: city
   profiles:
     - provider: github
-      handle: example-handle
-      url: https://github.com/example-handle
+      handle: homer-j-simpson
+      url: https://github.com/homer-j-simpson
       visible: true
     - provider: linkedin
-      handle: example-handle
-      url: https://www.linkedin.com/in/example-handle
+      handle: homer-simpson
+      url: https://www.linkedin.com/in/homer-simpson
       visible: true
-  strengths: ["Example Strength One", "Example Strength Two", "Example Strength Three"]
+  strengths: ["Team snack logistics", "Crisis improvisation", "Optimistic perseverance"]
 
 skills:
   technical:
-    - Example Technical Skill A
-    - Example Technical Skill B
-    - Example Technical Skill C
+    - Nuclear reactor monitoring
+    - Control-room checklist discipline
+    - Emergency doughnut restocking
   functional:
-    - Example Functional Skill A
-    - Example Functional Skill B
+    - Stakeholder rapport (especially Moe)
+    - Cross-functional bowling league leadership
 
 bio:
   - >-
-    This is a placeholder bio paragraph. Replace it with a short summary of your background, focus areas, and what you bring to a role.
+    Safety-minded professional with decades of experience keeping Sector 7G
+    mostly online. Known for clear communication under pressure, an open-door
+    (and open-fridge) policy, and an unmatched commitment to break-room morale.
 
 experience:
-  - company: Example Company
-    role: Example Job Title
-    dates: "2022 – Present"
-    location: Example City
+  - company: Springfield Nuclear Power Plant
+    role: Nuclear Safety Inspector
+    dates: "1989 – Present"
+    location: Springfield
     subsections:
-      - heading: Example Project Area
+      - heading: Sector 7G Operations
         bullets:
-          - Example accomplishment bullet describing scope and impact.
-          - Another example bullet — replace with real, specific results.
-          - A third example bullet showing the expected level of detail.
+          - Maintained Reactor Unit 2 awareness while balancing competing priorities such as naps, snacks, and occasional actual inspections.
+          - Partnered with plant leadership on safety drills that somehow always ended near the vending machines.
+          - Reduced “where did I put my clipboard” incidents through a personal item-tracking system involving pockets and doughnuts.
 
 education:
-  - "Example Degree — Example University (2016 – 2020)"
+  - "High School Diploma — Springfield High School"
 
 panels: []

@@ -400,7 +400,7 @@ class TestQuestionApiEndpoints:
         assert "Python development" in suggested.get_json()["answer"]
 
 
-SAMPLE_RESUME_TEXT = """Jordan Rivers
+SAMPLE_RESUME_TEXT = """Homer Simpson
 
 Summary
 Platform leader with a decade of experience building resilient cloud systems.
@@ -671,7 +671,7 @@ class TestResumeImportApiEndpoints:
         from docx import Document
 
         document = Document()
-        document.add_paragraph("Jordan Rivers")
+        document.add_paragraph("Homer Simpson")
         document.add_paragraph("")
         document.add_paragraph("Skills")
         document.add_paragraph("Kubernetes, Terraform")

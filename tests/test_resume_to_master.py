@@ -10,10 +10,10 @@ from cvbuilder.resume_to_master import apply_resume_to_master
 
 def _base_doc() -> dict[str, Any]:
     return {
-        "person": {"first_name": "Jordan", "last_name": "Rivers"},
+        "person": {"first_name": "Homer", "last_name": "Simpson"},
         "panels": [{"title": "Keep me"}],
         "bio": ["Old bio"],
-        "experience": [{"company": "Example Company", "role": "Example"}],
+        "experience": [{"company": "Plant Placeholder", "role": "Example"}],
         "skills": {"technical": ["Old"], "functional": ["Keep?"]},
         "education": ["Old Uni"],
         "extra_key": "untouched",
@@ -28,7 +28,7 @@ class TestApplyResumeToMaster:
         result = apply_resume_to_master(
             _base_doc(), resume, {"profile", "experience", "skills", "education"}
         )
-        assert result["person"] == {"first_name": "Jordan", "last_name": "Rivers"}
+        assert result["person"] == {"first_name": "Homer", "last_name": "Simpson"}
         assert result["panels"] == [{"title": "Keep me"}]
         assert result["extra_key"] == "untouched"
 
@@ -71,7 +71,7 @@ class TestApplyResumeToMaster:
         resume = ParsedResume(skills=["New"])
         result = apply_resume_to_master(_base_doc(), resume, {"skills"})
         assert result["bio"] == ["Old bio"]
-        assert result["experience"][0]["company"] == "Example Company"
+        assert result["experience"][0]["company"] == "Plant Placeholder"
         assert result["education"] == ["Old Uni"]
         assert result["skills"]["technical"] == ["New"]
 

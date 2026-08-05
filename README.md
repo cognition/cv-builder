@@ -6,9 +6,9 @@ HTML/CSS resume, a SQLite-backed snippet library for assembling
 role-tailored variants, and an MCP server so an LLM can help do the same
 thing from a chat client instead of the browser.
 
-Ships with a fully synthetic example person in `cv/web/data.yaml` and
-`content/` — replace it with your own before you rely on this for real.
-Nothing in this repo is anyone's real personal data.
+Ships with a fully synthetic example person (Homer Simpson) in
+`cv/web/data.yaml` and `content/` — replace it with your own before you
+rely on this for real. Nothing in this repo is anyone's real personal data.
 
 ## Layout
 
