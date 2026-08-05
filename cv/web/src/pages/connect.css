@@ -30,10 +30,16 @@
   color: #dbe6e0;
 }
 .code-row code { overflow: auto; white-space: nowrap; }
-.code-row button { padding: 5px 8px; border-color: rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .08); color: #fff; font-size: 9px; }
+.code-row button { padding: 5px 8px; border-color: rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .08); color: #fff; font-size: 9px; flex: none; }
+
+.code-row.json { flex-direction: column; align-items: stretch; gap: 8px; }
+.code-row.json pre { margin: 0; overflow: auto; }
+.code-row.json code { white-space: pre; }
+.code-row.json button { align-self: flex-end; }
 
 .setup-steps details { margin-top: 10px; color: var(--green); font-size: 10px; }
-.setup-steps details p { margin-top: 8px; color: var(--muted); }
+.setup-steps details + details { margin-top: 8px; }
+.setup-steps details p { margin-top: 8px; margin-bottom: 8px; color: var(--muted); }
 
 .prompt-card { position: relative; padding: 16px; border: 1px solid #b7cbbf; border-radius: 9px; background: #f7faf8; }
 .prompt-card span { color: var(--green); font-size: 8px; font-weight: 800; }
@@ -50,6 +56,12 @@
 .permission-note { margin: 18px 0; padding: 13px; border-radius: 8px; background: #fff; }
 .permission-note b { font-size: 10px; }
 .permission-note p { margin: 4px 0 0; color: var(--muted); font-size: 9px; }
+
+.tool-list { margin: 0 0 14px; font-size: 10px; color: var(--green); }
+.tool-list summary { cursor: pointer; }
+.tool-list p { margin: 8px 0; color: var(--muted); font-size: 9px; }
+.tool-list code { display: inline-block; margin: 0 4px 4px 0; padding: 3px 6px; border-radius: 5px; background: #fff; color: var(--ink); font-size: 8px; }
+
 .mcp-side > button { width: 100%; background: #fff; font-weight: 700; }
 #test-result { margin-top: 9px; font-size: 10px; text-align: center; }
 #test-result.ok { color: var(--green); }

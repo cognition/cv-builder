@@ -29,9 +29,40 @@
             <h3>Add it to your assistant</h3>
             <p>For Claude Code, run this command once (adjust the path to where you cloned <code>cv-builder</code>).</p>
             <div class="code-row"><code>claude mcp add cv-builder -- python3 /absolute/path/to/cv-builder/scripts/mcp-server.py</code><button type="button" class="copy" data-copy="claude mcp add cv-builder -- python3 /absolute/path/to/cv-builder/scripts/mcp-server.py">Copy</button></div>
+
+            <details>
+              <summary>Editing a config file instead? (Claude Desktop, etc.)</summary>
+              <p>Add this to your client's MCP config file, then restart the client.</p>
+              <div class="code-row json"><pre><code>{
+  "mcpServers": {
+    "cv-builder": {
+      "command": "python3",
+      "args": ["/absolute/path/to/cv-builder/scripts/mcp-server.py"]
+    }
+  }
+}</code></pre><button type="button" class="copy" data-copy='{
+  "mcpServers": {
+    "cv-builder": {
+      "command": "python3",
+      "args": ["/absolute/path/to/cv-builder/scripts/mcp-server.py"]
+    }
+  }
+}'>Copy</button></div>
+            </details>
+
             <details>
               <summary>Using Docker's HTTP transport instead?</summary>
-              <p>Connect to <code>http://127.0.0.1:8765/mcp</code> with Streamable HTTP, or point another MCP client at the local Python script as a stdio server.</p>
+              <p>When the container runs with <code>MCP_TRANSPORT=streamable-http</code>, the server is reachable over the network instead of being spawned locally — point a client at it directly.</p>
+              <div class="code-row"><code>claude mcp add --transport http cv-builder http://127.0.0.1:8765/mcp</code><button type="button" class="copy" data-copy="claude mcp add --transport http cv-builder http://127.0.0.1:8765/mcp">Copy</button></div>
+              <div class="code-row json"><pre><code>{
+  "mcpServers": {
+    "cv-builder": { "url": "http://127.0.0.1:8765/mcp" }
+  }
+}</code></pre><button type="button" class="copy" data-copy='{
+  "mcpServers": {
+    "cv-builder": { "url": "http://127.0.0.1:8765/mcp" }
+  }
+}'>Copy</button></div>
             </details>
           </div>
         </li>
@@ -58,6 +89,11 @@
         <li><b>Manage drafts</b><span>Save, load, and revise selections.</span></li>
       </ul>
       <div class="permission-note"><b>You stay in control</b><p>Nothing is written until you ask the assistant to create or change a version.</p></div>
+      <details class="tool-list">
+        <summary>Exact tool names (15)</summary>
+        <p>Ask your assistant to use these directly if it doesn't pick them up on its own.</p>
+        <code>list_snippets</code><code>get_snippet</code><code>create_snippet</code><code>update_snippet</code><code>add_snippet_variant</code><code>delete_snippet</code><code>delete_snippet_variant</code><code>match_job_posting</code><code>compose_cv</code><code>list_variants</code><code>list_drafts</code><code>get_draft</code><code>save_draft</code><code>delete_draft</code><code>reseed_snippets</code>
+      </details>
       <button type="button" id="test-mcp">Test HTTP connection</button>
       <div id="test-result"></div>
     </aside>
