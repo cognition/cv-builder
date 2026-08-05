@@ -10,6 +10,7 @@
   const inspectorName = document.getElementById("inspector-name");
   const inspectorMeta = document.getElementById("inspector-meta");
   const useAssetBtn = document.getElementById("use-asset");
+  const deleteAssetBtn = document.getElementById("delete-asset");
   const filters = [...document.querySelectorAll("[data-asset-filter]")];
   const search = document.getElementById("asset-search");
   const modal = document.getElementById("asset-modal");
@@ -112,10 +113,12 @@
     if (card.dataset.kind === "icon") {
       inspectorMeta.textContent = "Built-in icon — always available, no upload needed.";
       useAssetBtn.style.display = "none";
+      deleteAssetBtn.style.display = "none";
       selectedDataPath = null;
     } else {
       inspectorMeta.textContent = card.dataset.kind === "photo" ? "Currently used as your profile photo." : "Uploaded logo or image.";
       useAssetBtn.style.display = "";
+      deleteAssetBtn.style.display = "";
       useAssetBtn.disabled = card.dataset.kind === "photo";
       useAssetBtn.textContent = card.dataset.kind === "photo" ? "Already your profile photo" : "Use as profile photo";
       selectedDataPath = card.dataset.dataPath;
@@ -157,6 +160,42 @@
     } catch (err) {
       showToast("Error: " + err.message);
       useAssetBtn.disabled = false;
+    }
+  });
+
+  deleteAssetBtn.addEventListener("click", async () => {
+    if (!selectedDataPath) return;
+    const name = inspectorName.textContent;
+    if (!name) return;
+    if (
+      !confirm(
+        `Delete “${name}”? This removes it from your asset library.`
+      )
+    ) {
+      return;
+    }
+    deleteAssetBtn.disabled = true;
+    try {
+      const resp = await fetch(
+        "/api/images/" + encodeURIComponent(name),
+        { method: "DELETE" }
+      );
+      const body = await resp.json();
+      if (!resp.ok) throw new Error(body.error || "delete failed");
+      selectedDataPath = null;
+      inspectorDetail.classList.remove("open");
+      inspectorEmpty.style.display = "";
+      showToast(
+        body.cleared_profile_photo
+          ? `${name} deleted (profile photo cleared).`
+          : `${name} deleted.`
+      );
+      await loadPerson();
+      await loadImages();
+    } catch (err) {
+      showToast("Error: " + err.message);
+    } finally {
+      deleteAssetBtn.disabled = false;
     }
   });
 

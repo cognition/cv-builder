@@ -12,4 +12,4 @@ __all__ = [
     "SnippetVariant",
 ]
 
-__version__ = "0.2.14.1"
+__version__ = "0.2.15.1"

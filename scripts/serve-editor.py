@@ -58,6 +58,7 @@ from cvbuilder.resume_extractor import (
     parse_resume,
 )
 from cvbuilder.resume_to_master import apply_resume_to_master
+from cvbuilder.paths import DataPaths
 from cvbuilder.working_draft import WorkingDraftApplier
 
 from flask import (
@@ -88,12 +89,14 @@ _APP_ENV = JinjaEnvironment(
     autoescape=select_autoescape(["html"]),
 )
 
-PREVIEW_PDF = cvweb.REPO_ROOT / "cv" / "current" / "cv.pdf"
-DEFAULT_DB = cvweb.REPO_ROOT / "data" / "snippets.db"
-VARIANTS_DIR = cvweb.REPO_ROOT / "cv" / "variants"
+_DATA_PATHS = DataPaths(cvweb.REPO_ROOT)
+PREVIEW_PDF = _DATA_PATHS.preview_pdf
+DEFAULT_DB = _DATA_PATHS.snippets_db
+VARIANTS_DIR = _DATA_PATHS.variants
 EXPORT_FORMATS = frozenset({"yaml", "markdown", "pdf"})
 EXPORT_DOCUMENT_KINDS = frozenset({"master", "variant"})
-ASSETS_DIR = cvweb.REPO_ROOT / "assets" / "images"
+ASSETS_DIR = _DATA_PATHS.assets_images
+ASSETS_BRANDING_DIR = _DATA_PATHS.assets_branding
 ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico"}
 IMAGE_CONTENT_TYPES = {
     "image/png": ".png",
@@ -112,9 +115,7 @@ _VARIANT_YAML.preserve_quotes = True
 # Uploaded resume files. Overridable so tests/BDD scenarios can point this
 # at a scratch directory instead of writing into the tracked repo tree
 # (same pattern as SNIPPETS_DB / features/environment.py's VARIANTS_DIR).
-IMPORTS_DIR = Path(
-    os.environ.get("RESUME_IMPORTS_DIR", str(cvweb.REPO_ROOT / "data" / "imports"))
-)
+IMPORTS_DIR = _DATA_PATHS.imports
 STAGING_DIR = IMPORTS_DIR / "staging"
 MAX_IMPORT_BYTES = 25 * 1024 * 1024
 IMPORT_SECTIONS = ("profile", "experience", "skills", "education")
@@ -1297,9 +1298,9 @@ def _image_entry(path: Path) -> dict[str, Any]:
     """Describe one image file for the picker UI."""
     return {
         "name": path.name,
-        "web_path": "/" + str(path.relative_to(cvweb.REPO_ROOT)),
+        "web_path": f"/assets/images/{path.name}",
         # Path relative to cv/web/, the form data.yaml expects for person.photo.
-        "data_path": "../../" + str(path.relative_to(cvweb.REPO_ROOT)),
+        "data_path": f"../../assets/images/{path.name}",
         "size": path.stat().st_size,
     }
 
@@ -1351,6 +1352,67 @@ def api_upload_image() -> Any:
         destination.unlink()
         return jsonify(error="image exceeds 10 MB limit"), 400
     return jsonify(_image_entry(destination)), 201
+
+
+@app.delete("/api/images/<path:filename>")
+def api_delete_image(filename: str) -> Any:
+    """Delete one uploaded image from the persistent assets directory.
+
+    Built-in branding icons are not stored here and cannot be deleted.
+    When the deleted file is the current profile photo, ``person.photo``
+    is cleared on the Working Draft document.
+    """
+    # Reject nested or traversed names — only a bare filename is allowed.
+    safe = Path(filename).name
+    if (
+        not safe
+        or safe != filename
+        or safe in {".", ".."}
+        or "/" in filename
+        or "\\" in filename
+    ):
+        return jsonify(error="invalid image name"), 400
+    if Path(safe).suffix.lower() not in ALLOWED_IMAGE_EXTS:
+        return jsonify(error="unsupported image type"), 400
+
+    assets_root = ASSETS_DIR.resolve()
+    target = (ASSETS_DIR / safe).resolve()
+    try:
+        target.relative_to(assets_root)
+    except ValueError:
+        return jsonify(error="invalid path"), 400
+    if not target.is_file():
+        return jsonify(error="not found"), 404
+
+    data_path = f"../../assets/images/{safe}"
+    cleared_profile_photo = False
+    store = _document_store()
+    try:
+        document, data = _master_data(store)
+    except (LookupError, ValueError):
+        document = None
+        data = None
+    if (
+        isinstance(data, dict)
+        and isinstance(data.get("person"), dict)
+        and document is not None
+        and document.id is not None
+    ):
+        current = str(data["person"].get("photo") or "")
+        if current == data_path or current.endswith(f"/{safe}"):
+            before = document.content_yaml
+            data["person"]["photo"] = ""
+            after = cvweb.dump_data_text(data)
+            if after != before:
+                store.push_before_change(document.id, "delete-asset", before)
+                store.upsert_master(after)
+                cleared_profile_photo = True
+
+    try:
+        target.unlink()
+    except OSError as exc:
+        return jsonify(error=f"failed to delete: {exc}"), 500
+    return jsonify(ok=True, name=safe, cleared_profile_photo=cleared_profile_photo)
 
 
 @app.post("/api/images/fetch")
@@ -1484,6 +1546,18 @@ def legacy_cv_web_redirect(rest: str = "") -> Any:
     """Redirect former ``/cv/web/...`` URLs to the top-level studio paths."""
     target = f"/{rest}" if rest else "/"
     return redirect(target, code=301)
+
+
+@app.get("/assets/images/<path:filename>")
+def serve_user_image(filename: str) -> Any:
+    """Serve a user-uploaded image from the persistent data volume."""
+    return send_from_directory(ASSETS_DIR, filename)
+
+
+@app.get("/assets/branding/<path:filename>")
+def serve_branding_asset(filename: str) -> Any:
+    """Serve built-in branding assets shipped with the application image."""
+    return send_from_directory(ASSETS_BRANDING_DIR, filename)
 
 
 @app.get("/<path:subpath>")

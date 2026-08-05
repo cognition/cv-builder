@@ -91,6 +91,7 @@ def api_app(
         "api_list_images",
         "api_upload_image",
         "api_fetch_image",
+        "api_delete_image",
         "api_upload_import",
     ):
         func = ns[func_name]
@@ -707,6 +708,45 @@ class TestApiEndpoints:
         assert listed.status_code == 200
         names = {item["name"] for item in listed.get_json()}
         assert body["name"] in names
+
+    def test_image_delete_removes_file_and_clears_photo(
+        self, client: "FlaskClient", repo_fixture: Path
+    ) -> None:
+        """Deleting an uploaded image removes the file and clears person.photo."""
+        from io import BytesIO
+
+        png_bytes = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+        )
+        upload = client.post(
+            "/api/images/upload",
+            data={"file": (BytesIO(png_bytes), "nuke.png")},
+            content_type="multipart/form-data",
+        )
+        assert upload.status_code == 201
+        name = upload.get_json()["name"]
+        data_path = upload.get_json()["data_path"]
+        saved = client.post(
+            "/api/save",
+            json=[{"path": "person.photo", "value": data_path}],
+        )
+        assert saved.status_code == 200
+
+        deleted = client.delete(f"/api/images/{name}")
+        assert deleted.status_code == 200
+        assert deleted.get_json()["ok"] is True
+        assert deleted.get_json()["cleared_profile_photo"] is True
+        assert not (repo_fixture / "assets" / "images" / name).exists()
+        listed = {item["name"] for item in client.get("/api/images").get_json()}
+        assert name not in listed
+        person = client.get("/api/person").get_json()
+        assert person.get("photo") in ("", None)
+
+    def test_image_delete_rejects_path_traversal(self, client: "FlaskClient") -> None:
+        """Path traversal must not delete files outside the assets directory."""
+        resp = client.delete("/api/images/../../etc/passwd")
+        assert resp.status_code in {400, 404}
 
     def test_image_upload_rejects_bad_type(self, client: "FlaskClient") -> None:
         """Non-image extensions should be rejected."""
