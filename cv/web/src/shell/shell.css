@@ -1,20 +1,35 @@
-/* App shell: left nav + sticky header. Pairs with theme.css. */
+/* App shell: left nav + sticky header. Pairs with theme.css.
+ * The shell fills the viewport; only the main column scrolls so the
+ * aside and top bar stay fixed on every Studio page.
+ */
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
 
 .shell {
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100%;
+  max-height: 100vh;
   max-width: 1500px;
   margin: auto;
   background: #fff;
+  overflow: hidden;
 }
 
 .shell > aside {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
   padding: 26px 14px 16px;
   border-right: 1px solid var(--line);
   background: #f8faf8;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .brand {
@@ -26,6 +41,7 @@
   font-size: 17px;
   font-weight: 750;
   text-decoration: none;
+  flex-shrink: 0;
 }
 
 .brand b {
@@ -82,7 +98,7 @@
   box-shadow: 0 1px 2px rgba(23, 52, 39, .04);
 }
 
-.aside-foot { margin-top: auto; }
+.aside-foot { margin-top: auto; flex-shrink: 0; }
 
 .shell .user {
   display: flex;
@@ -109,13 +125,19 @@
 .shell .user small { color: var(--muted); font-size: 9px; }
 
 main {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 main > header {
   position: sticky;
   top: 0;
   z-index: 15;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -128,6 +150,13 @@ main > header {
 
 main > header small { color: #79847d; font-size: 9px; font-weight: 800; letter-spacing: .13em; }
 main > header h1 { margin: 2px 0 0; font-size: 22px; letter-spacing: -.015em; }
+
+/* Everything under the page header scrolls inside main. */
+main > :not(header):not(#preview-pane) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
 
 .saved {
   display: flex;
