@@ -106,6 +106,50 @@ class CvComposer:
             "selection_count": len(items),
         }
 
+    def build_document_from_selections(
+        self,
+        base: dict[str, Any],
+        selections: list[dict[str, Any]] | list[SelectionItem],
+    ) -> dict[str, Any]:
+        """Assemble a document dict from selections without writing stores.
+
+        Args:
+            base: Starting data.yaml-shaped mapping (person fields preserved).
+            selections: Ordered Tailor selections.
+
+        Returns:
+            A composed document dictionary.
+        """
+        items = self._normalise_selections(selections)
+        return self._build_document(base, items)
+
+    def base_document_shell(self, content_yaml: str) -> dict[str, Any]:
+        """Build an empty-content shell preserving person and education.
+
+        Args:
+            content_yaml: Current working document YAML text.
+
+        Returns:
+            A mapping ready for ``build_document_from_selections``.
+
+        Raises:
+            ValueError: If the YAML is not a mapping.
+        """
+        data = _YAML.load(content_yaml) or {}
+        if not isinstance(data, dict):
+            raise ValueError("CV document YAML must be a mapping")
+        return {
+            "person": deepcopy(data.get("person") or {}),
+            "skills": {"technical": [], "functional": []},
+            "bio": [],
+            "experience": [],
+            "education": list(data.get("education") or []),
+        }
+
+    def dump_document_yaml(self, document: dict[str, Any]) -> str:
+        """Serialise a document mapping to YAML text."""
+        return self._dump_yaml(document)
+
     def _build_document(
         self, base: dict[str, Any], items: list[SelectionItem]
     ) -> dict[str, Any]:

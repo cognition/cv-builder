@@ -1,6 +1,6 @@
 {% extends "shell/base.html" %}
 {% block title %}CV Studio — Personal details{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="/cv/web/src/pages/details.css">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/src/pages/details.css">{% endblock %}
 {% block header_actions %}<button type="button" class="primary" id="save-details">Save details</button>{% endblock %}
 {% block content %}
 <div class="view active">
@@ -17,7 +17,7 @@
       <section>
         <div class="details-section-head">
           <div><h3>Identity</h3><p>The name and headline shown at the top of your CV.</p></div>
-          <a class="photo-button" href="/cv/web/assets"><span id="photo-thumb"></span><b>Change photo</b></a>
+          <a class="photo-button" href="/assets"><span id="photo-thumb"></span><b>Change photo</b></a>
         </div>
         <div class="field-grid">
           <label>First name<input id="first-name" class="preview-field" data-preview="first"></label>
@@ -75,4 +75,4 @@
   </div>
 </div>
 {% endblock %}
-{% block extra_body %}<script src="/cv/web/src/pages/details.js"></script>{% endblock %}
+{% block extra_body %}<script src="/src/pages/details.js"></script>{% endblock %}

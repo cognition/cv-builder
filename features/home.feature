@@ -12,12 +12,12 @@ Feature: Home dashboard
     Then the response status is 200
     And the page heading contains "Build a focused CV"
     And the page contains "Tailor a new CV"
-    And the page has an element matching "a.primary[href='/cv/web/build']"
+    And the page has an element matching "a.primary[href='/build']"
 
   Scenario: Home lists recent versions
     When I open the "home" page
     Then the page heading contains "Recent versions"
-    And the page has an element matching "a[href='/cv/web/variants']"
+    And the page has an element matching "a[href='/variants']"
 
   Scenario: Home shows workspace stats
     When I open the "home" page

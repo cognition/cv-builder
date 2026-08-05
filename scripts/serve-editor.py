@@ -6,9 +6,9 @@ Also exposes the SQLite snippet library, custom-CV builder, drafts,
 job-posting matching, and variant manager endpoints.
 
 Usage: python3 scripts/serve-editor.py [port]
-Then open http://127.0.0.1:<port>/cv/web/edit
-     or http://127.0.0.1:<port>/cv/web/build
-     or http://127.0.0.1:<port>/cv/web/variants
+Then open http://127.0.0.1:<port>/edit
+     or http://127.0.0.1:<port>/build
+     or http://127.0.0.1:<port>/variants
 
 Binds to 127.0.0.1 by default (override with EDITOR_HOST). It serves the
 whole repo over HTTP for local asset resolution (images, stylesheet) —
@@ -58,8 +58,16 @@ from cvbuilder.resume_extractor import (
     parse_resume,
 )
 from cvbuilder.resume_to_master import apply_resume_to_master
+from cvbuilder.working_draft import WorkingDraftApplier
 
-from flask import Flask, jsonify, make_response, request, send_from_directory
+from flask import (
+    Flask,
+    jsonify,
+    make_response,
+    redirect,
+    request,
+    send_from_directory,
+)
 from jinja2 import (
     Environment as JinjaEnvironment,
     FileSystemLoader as JinjaFSLoader,
@@ -336,7 +344,7 @@ def _apply_variants(
         )
 
 
-@app.get("/cv/web/")
+@app.get("/")
 def home_page() -> str:
     """Serve the real dashboard: live snippet/variant counts + recent versions."""
     database = _database()
@@ -353,7 +361,7 @@ def home_page() -> str:
     )
 
 
-@app.get("/cv/web/edit")
+@app.get("/edit")
 def edit_page() -> Any:
     """Serve Master CV inside the Studio shell."""
     store = _document_store()
@@ -371,7 +379,7 @@ def edit_page() -> Any:
     )
 
 
-@app.get("/cv/web/library")
+@app.get("/library")
 def library_page() -> str:
     """Serve the content-library browse view over the snippet database."""
     return _render_page(
@@ -379,7 +387,7 @@ def library_page() -> str:
     )
 
 
-@app.get("/cv/web/details")
+@app.get("/details")
 def details_page() -> str:
     """Serve the personal-details page (identity, contact, social profiles)."""
     return _render_page(
@@ -390,7 +398,7 @@ def details_page() -> str:
     )
 
 
-@app.get("/cv/web/import")
+@app.get("/import")
 def import_page() -> str:
     """Serve the resume-import page (upload, review, import into the library)."""
     return _render_page(
@@ -401,7 +409,7 @@ def import_page() -> str:
     )
 
 
-@app.get("/cv/web/build")
+@app.get("/build")
 def build_page() -> str:
     """Serve the tailor flow: paste a posting, choose content, compose a version."""
     return _render_page(
@@ -409,7 +417,7 @@ def build_page() -> str:
     )
 
 
-@app.get("/cv/web/questions")
+@app.get("/questions")
 def questions_page() -> str:
     """Serve the application-questions page (sources, questions, answers)."""
     return _render_page(
@@ -420,7 +428,7 @@ def questions_page() -> str:
     )
 
 
-@app.get("/cv/web/variants")
+@app.get("/variants")
 def variants_page() -> str:
     """Serve the composed-variant manager page."""
     return _render_page(
@@ -428,7 +436,7 @@ def variants_page() -> str:
     )
 
 
-@app.get("/cv/web/connect")
+@app.get("/connect")
 def connect_page() -> str:
     """Serve the Connect AI (MCP) setup page."""
     return _render_page(
@@ -439,13 +447,13 @@ def connect_page() -> str:
     )
 
 
-@app.get("/cv/web/wireframe")
+@app.get("/wireframe")
 def wireframe_page() -> str:
     """Serve the standalone, sample-data-only product wireframe."""
     return (cvweb.WEB_DIR / "wireframe.html").read_text(encoding="utf-8")
 
 
-@app.get("/cv/web/docs")
+@app.get("/docs")
 def docs_page() -> str:
     """Serve README.md as a plain readable page — the "how to use" link."""
     readme = (cvweb.REPO_ROOT / "README.md").read_text(encoding="utf-8")
@@ -696,17 +704,17 @@ def api_export() -> Any:
 
 @app.get("/api/preview.pdf")
 def api_preview_pdf() -> Any:
-    """Serve the preview PDF, generating it first if missing."""
-    if not PREVIEW_PDF.exists():
-        store = _document_store()
-        try:
-            _, data = _master_data(store)
-        except (LookupError, ValueError) as exc:
-            return jsonify(error=str(exc)), 404
-        try:
-            cvweb.export_pdf(PREVIEW_PDF, data=data)
-        except (OSError, RuntimeError, SystemExit) as exc:
-            return jsonify(error=str(exc)), 500
+    """Serve a fresh preview PDF of the Working Draft CV."""
+    store = _document_store()
+    try:
+        _, data = _master_data(store)
+    except (LookupError, ValueError) as exc:
+        return jsonify(error=str(exc)), 404
+    try:
+        PREVIEW_PDF.parent.mkdir(parents=True, exist_ok=True)
+        cvweb.export_pdf(PREVIEW_PDF, data=data)
+    except (OSError, RuntimeError, SystemExit) as exc:
+        return jsonify(error=str(exc)), 500
     return send_from_directory(
         PREVIEW_PDF.parent, PREVIEW_PDF.name, mimetype="application/pdf"
     )
@@ -823,17 +831,58 @@ def api_get_draft(name: str) -> Any:
 
 @app.put("/api/drafts/<name>")
 def api_save_draft(name: str) -> Any:
-    """Create or update a named draft selection."""
+    """Create or update a named draft; optionally apply into Working Draft."""
     payload = request.get_json(force=True) or {}
     selections = payload.get("selections") or []
     if not isinstance(selections, list):
         return jsonify(error="selections must be a list"), 400
+    apply = bool(payload.get("apply"))
+    pin_label = payload.get("pin_label")
     database = _database()
     try:
         draft = database.save_draft(name, selections)
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
-    return jsonify(draft.to_dict())
+    result = draft.to_dict()
+    result["applied"] = False
+    if apply:
+        if not selections:
+            return jsonify(error="selections must be a non-empty list"), 400
+        store = _document_store()
+        applier = WorkingDraftApplier(database, store, cvweb.REPO_ROOT)
+        try:
+            applied = applier.apply_selections(
+                selections,
+                history_label=f"draft:{name}",
+                pin_label=str(pin_label).strip() if pin_label else None,
+            )
+        except (ValueError, KeyError) as exc:
+            return jsonify(error=str(exc)), 400
+        result["applied"] = True
+        result["apply"] = applied
+    return jsonify(result)
+
+
+@app.post("/api/drafts/<name>/apply")
+def api_apply_draft(name: str) -> Any:
+    """Re-apply a saved draft's selections into the Working Draft CV."""
+    payload = request.get_json(force=True) or {}
+    pin_label = payload.get("pin_label")
+    database = _database()
+    draft = database.get_draft(name)
+    if draft is None:
+        return jsonify(error="not found"), 404
+    store = _document_store()
+    applier = WorkingDraftApplier(database, store, cvweb.REPO_ROOT)
+    try:
+        applied = applier.apply_selections(
+            draft.selections,
+            history_label=f"draft:{name}",
+            pin_label=str(pin_label).strip() if pin_label else None,
+        )
+    except (ValueError, KeyError) as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify({"ok": True, "name": name, **applied})
 
 
 @app.delete("/api/drafts/<name>")
@@ -1265,7 +1314,7 @@ def _unique_image_path(stem: str, ext: str) -> Path:
     return candidate
 
 
-@app.get("/cv/web/assets")
+@app.get("/assets")
 def assets_page() -> str:
     """Serve the asset library page over the existing images API."""
     return _render_page(
@@ -1428,9 +1477,21 @@ def api_render_variant(name: str) -> Any:
     )
 
 
+@app.get("/cv/web/")
+@app.get("/cv/web")
+@app.get("/cv/web/<path:rest>")
+def legacy_cv_web_redirect(rest: str = "") -> Any:
+    """Redirect former ``/cv/web/...`` URLs to the top-level studio paths."""
+    target = f"/{rest}" if rest else "/"
+    return redirect(target, code=301)
+
+
 @app.get("/<path:subpath>")
 def serve_repo_file(subpath: str) -> Any:
-    """Serve any repo-relative file for local asset resolution."""
+    """Serve UI assets from ``cv/web/``, then other repo-relative files."""
+    web_candidate = cvweb.WEB_DIR / subpath
+    if web_candidate.is_file():
+        return send_from_directory(cvweb.WEB_DIR, subpath)
     return send_from_directory(cvweb.REPO_ROOT, subpath)
 
 
@@ -1447,8 +1508,8 @@ def _resolve_host_port(argv: list[str]) -> tuple[str, int]:
 if __name__ == "__main__":
     bind_host, bind_port = _resolve_host_port(sys.argv)
     print(
-        f"Editor running at http://127.0.0.1:{bind_port}/cv/web/edit  "
-        f"(builder: /cv/web/build, variants: /cv/web/variants)  "
+        f"Editor running at http://127.0.0.1:{bind_port}/edit  "
+        f"(builder: /build, variants: /variants)  "
         f"(Ctrl-C to stop)"
     )
     if bind_host != "127.0.0.1":

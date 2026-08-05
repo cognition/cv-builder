@@ -13,7 +13,7 @@ Feature: CV versions
     And the "versions" nav item is marked active
     And the page heading contains "CV versions"
     And the page has an element matching "#version-list"
-    And the page has an element matching "a.primary[href='/cv/web/build']"
+    And the page has an element matching "a.primary[href='/build']"
 
   Scenario: Variants API lists composed documents
     When I GET the API path "/api/variants"

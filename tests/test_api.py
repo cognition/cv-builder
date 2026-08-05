@@ -152,6 +152,60 @@ class TestApiEndpoints:
         missing = client.get("/api/drafts/demo")
         assert missing.status_code == 404
 
+    def test_put_draft_with_apply_updates_working_not_variants(
+        self, client: "FlaskClient"
+    ) -> None:
+        """PUT apply=true updates Working Draft and does not add variants."""
+        import os
+
+        store = DocumentStore(SnippetDatabase(Path(os.environ["SNIPPETS_DB"])))
+        before = [item.name for item in store.list_variants()]
+        snippets = client.get("/api/snippets").get_json()
+        snippet_id = snippets[0]["id"]
+        selections = [
+            {
+                "snippet_id": snippet_id,
+                "detail_level": "standard",
+                "section": "skill",
+            }
+        ]
+        resp = client.put(
+            "/api/drafts/demo",
+            json={"selections": selections, "apply": True},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["applied"] is True
+        working = store.get_working()
+        assert working is not None
+        assert "Python development" in working.content_yaml
+        assert [item.name for item in store.list_variants()] == before
+
+    def test_post_draft_apply_reapplies_saved_selections(
+        self, client: "FlaskClient"
+    ) -> None:
+        """POST /api/drafts/<name>/apply rebuilds Working Draft from draft."""
+        import os
+
+        snippets = client.get("/api/snippets").get_json()
+        snippet_id = snippets[0]["id"]
+        selections = [
+            {
+                "snippet_id": snippet_id,
+                "detail_level": "standard",
+                "section": "skill",
+            }
+        ]
+        saved = client.put("/api/drafts/demo", json={"selections": selections})
+        assert saved.status_code == 200
+        resp = client.post("/api/drafts/demo/apply", json={})
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+        store = DocumentStore(SnippetDatabase(Path(os.environ["SNIPPETS_DB"])))
+        working = store.get_working()
+        assert working is not None
+        assert "Python development" in working.content_yaml
+
     def test_match_endpoint(self, client: "FlaskClient") -> None:
         """POST /api/match should return ranked hits for known terms."""
         resp = client.post("/api/match", json={"text": "Need strong Python skills"})
@@ -466,7 +520,7 @@ class TestApiEndpoints:
     def test_edit_page_without_master_returns_404(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """GET /cv/web/edit should 404 when bootstrap finds no Master CV."""
+        """GET /edit should 404 when bootstrap finds no Master CV."""
         repo_root = tmp_path / "repo"
         web = repo_root / "cv" / "web"
         web.mkdir(parents=True)
@@ -505,13 +559,67 @@ class TestApiEndpoints:
         app.config["TESTING"] = True
         client = app.test_client()
 
-        edit = client.get("/cv/web/edit")
+        edit = client.get("/edit")
         assert edit.status_code == 404
         assert b"Master CV unavailable" in edit.data
 
         person = client.get("/api/person")
         assert person.status_code == 404
         assert "Master CV document is not available" in person.get_json()["error"]
+
+    def test_studio_routes_are_top_level(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, repo_fixture: Path
+    ) -> None:
+        """Studio pages should live at the top path, not under /cv/web."""
+        db_path = tmp_path / "api.db"
+        monkeypatch.setenv("SNIPPETS_DB", str(db_path))
+
+        scripts = Path(__file__).resolve().parents[1] / "scripts"
+        src = Path(__file__).resolve().parents[1] / "src"
+        real_web = Path(__file__).resolve().parents[1] / "cv" / "web"
+        monkeypatch.syspath_prepend(str(scripts))
+        monkeypatch.syspath_prepend(str(src))
+
+        import cvweb
+
+        monkeypatch.setattr(cvweb, "REPO_ROOT", repo_fixture)
+        monkeypatch.setattr(cvweb, "WEB_DIR", real_web)
+        monkeypatch.setattr(
+            cvweb, "DATA_FILE", repo_fixture / "cv" / "web" / "data.yaml"
+        )
+
+        sys.modules.pop("serve-editor", None)
+        ns = runpy.run_path(str(scripts / "serve-editor.py"))
+        monkeypatch.setattr(ns["cvweb"], "REPO_ROOT", repo_fixture)
+        monkeypatch.setattr(ns["cvweb"], "WEB_DIR", real_web)
+        monkeypatch.setattr(
+            ns["cvweb"], "DATA_FILE", repo_fixture / "cv" / "web" / "data.yaml"
+        )
+
+        database = SnippetDatabase(db_path)
+        database.ensure_schema()
+        DocumentStore(database).bootstrap_from_filesystem(repo_fixture)
+
+        app = ns["app"]
+        app.config["TESTING"] = True
+        client = app.test_client()
+
+        home = client.get("/")
+        assert home.status_code == 200
+        assert b'href="/edit"' in home.data
+        assert b'href="/cv/web/edit"' not in home.data
+
+        edit = client.get("/edit")
+        assert edit.status_code == 200
+        assert b"cv-document" in edit.data
+
+        theme = client.get("/src/theme.css")
+        assert theme.status_code == 200
+        assert b":root" in theme.data or b"--" in theme.data
+
+        legacy = client.get("/cv/web/edit", follow_redirects=False)
+        assert legacy.status_code == 301
+        assert legacy.headers["Location"].endswith("/edit")
 
     def test_variants_list_and_delete(
         self, client: "FlaskClient", api_app: dict[str, Any], repo_fixture: Path

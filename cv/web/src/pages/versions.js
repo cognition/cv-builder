@@ -47,7 +47,7 @@
     list.innerHTML = "";
     if (!variants.length) {
       list.innerHTML =
-        '<p class="empty-row">No composed versions yet. <a href="/cv/web/build">Tailor a new CV</a> to create one.</p>';
+        '<p class="empty-row">No composed versions yet. <a href="/build">Tailor a new CV</a> to create one.</p>';
       setStatus("No versions.");
       return;
     }

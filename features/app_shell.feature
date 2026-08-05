@@ -12,22 +12,22 @@ Feature: Real CV Studio app shell routes
 
     Examples:
       | path              | active    |
-      | /cv/web/          | home      |
-      | /cv/web/details   | details   |
-      | /cv/web/import    | import    |
-      | /cv/web/build     | tailor    |
-      | /cv/web/questions | questions |
-      | /cv/web/library   | library   |
-      | /cv/web/variants  | versions  |
-      | /cv/web/assets    | assets    |
-      | /cv/web/connect   | connect   |
+      | /          | home      |
+      | /details   | details   |
+      | /import    | import    |
+      | /build     | tailor    |
+      | /questions | questions |
+      | /library   | library   |
+      | /variants  | versions  |
+      | /assets    | assets    |
+      | /connect   | connect   |
 
   Scenario: Master CV editor remains reachable
-    When I request the app path "/cv/web/edit"
+    When I request the app path "/edit"
     Then the response status is 200
     And the Master CV editor document is present
 
   Scenario: Wireframe prototype remains available as design reference only
-    When I request the app path "/cv/web/wireframe"
+    When I request the app path "/wireframe"
     Then the response status is 200
     And the page notes that it is sample data only

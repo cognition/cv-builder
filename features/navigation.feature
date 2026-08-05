@@ -47,4 +47,4 @@ Feature: CV Studio navigation shell
 
   Scenario: The brand link points home
     When I open the "content library" page
-    Then the page has an element matching "a.brand[href='/cv/web/']"
+    Then the page has an element matching "a.brand[href='/']"

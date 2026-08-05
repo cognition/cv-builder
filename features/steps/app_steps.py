@@ -77,16 +77,16 @@ def step_nav_active(context: Context, active: str) -> None:
     expected = resolve_path(key if key in NAV_ACTIVE.values() else active)
     # NAV_ACTIVE maps labels → keys; resolve_path wants page names.
     expected_by_key = {
-        "home": "/cv/web/",
-        "master": "/cv/web/edit",
-        "details": "/cv/web/details",
-        "import": "/cv/web/import",
-        "tailor": "/cv/web/build",
-        "questions": "/cv/web/questions",
-        "library": "/cv/web/library",
-        "assets": "/cv/web/assets",
-        "versions": "/cv/web/variants",
-        "connect": "/cv/web/connect",
+        "home": "/",
+        "master": "/edit",
+        "details": "/details",
+        "import": "/import",
+        "tailor": "/build",
+        "questions": "/questions",
+        "library": "/library",
+        "assets": "/assets",
+        "versions": "/variants",
+        "connect": "/connect",
     }
     want = expected_by_key.get(active.lower(), expected)
     assert href == want or href.rstrip("/") == want.rstrip("/"), (
