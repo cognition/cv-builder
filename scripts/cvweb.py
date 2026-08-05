@@ -264,11 +264,13 @@ def print_to_pdf(html_path: Path, out_pdf: Path) -> None:
     )
 
 
-def export_pdf(out_pdf: Path, data=None) -> None:
-    """Render the (non-editable) CV and print it to out_pdf."""
+def export_pdf(out_pdf: Path, data: Optional[Any] = None) -> None:
+    """Render the CV from a dict, YAML text, or the filesystem fallback."""
+    if isinstance(data, str):
+        data = load_data_text(data)
     html = render_html(data=data, edit_mode=False)
     out_html = WEB_DIR / "_rendered.html"
-    out_html.write_text(html)
+    out_html.write_text(html, encoding="utf-8")
     try:
         print_to_pdf(out_html, out_pdf)
     finally:

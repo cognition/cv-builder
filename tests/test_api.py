@@ -282,6 +282,84 @@ class TestApiEndpoints:
         assert resp.status_code == 200
         assert resp.get_json()["can_undo"] is False
 
+    def test_export_yaml_writes_file_only_when_requested(
+        self, api_app: dict[str, Any], tmp_path: Path
+    ) -> None:
+        """YAML export should write DB-backed content to the requested path."""
+        out = tmp_path / "exported.yaml"
+        before_file = api_app["data_file"].read_text(encoding="utf-8")
+        api_app["document_store"].upsert_master(
+            "person:\n  first_name: DB\n  last_name: Export\nbio:\n  - From DB\n"
+        )
+
+        response = api_app["client"].post(
+            "/api/export",
+            json={"format": "yaml", "path": str(out)},
+        )
+
+        assert response.status_code == 200
+        assert out.is_file()
+        assert "From DB" in out.read_text(encoding="utf-8")
+        assert api_app["data_file"].read_text(encoding="utf-8") == before_file
+
+    def test_export_markdown_writes_variant_by_name(
+        self, api_app: dict[str, Any], tmp_path: Path
+    ) -> None:
+        """Markdown export should support named DB-backed variant documents."""
+        out = tmp_path / "variant.md"
+        api_app["document_store"].upsert_variant(
+            "plant-role",
+            "person:\n  first_name: Homer\n  last_name: Simpson\nbio:\n  - Variant bio\n",
+        )
+
+        response = api_app["client"].post(
+            "/api/export",
+            json={
+                "format": "markdown",
+                "document": "variant",
+                "name": "plant-role",
+                "path": str(out),
+            },
+        )
+
+        assert response.status_code == 200
+        assert "# Homer Simpson" in out.read_text(encoding="utf-8")
+        assert "Variant bio" in out.read_text(encoding="utf-8")
+
+    def test_export_default_pdf_uses_database_without_yaml_side_effect(
+        self,
+        api_app: dict[str, Any],
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Default export should render the DB master as PDF without YAML writes."""
+        captured: dict[str, Any] = {}
+        before_file = api_app["data_file"].read_text(encoding="utf-8")
+        api_app["document_store"].upsert_master(
+            "person:\n  first_name: PDF\n  last_name: Export\nbio:\n  - PDF from DB\n"
+        )
+
+        def fake_export_pdf(out_pdf: Path, data: dict[str, Any]) -> None:
+            """Capture PDF export inputs without launching Chrome."""
+            captured["out_pdf"] = out_pdf
+            captured["data"] = data
+            out_pdf.parent.mkdir(parents=True, exist_ok=True)
+            out_pdf.write_bytes(b"%PDF-1.4 fake")
+
+        monkeypatch.setitem(
+            api_app["api_export"].__globals__,
+            "PREVIEW_PDF",
+            tmp_path / "cv.pdf",
+        )
+        monkeypatch.setattr(api_app["cvweb"], "export_pdf", fake_export_pdf)
+
+        response = api_app["client"].post("/api/export", json={})
+
+        assert response.status_code == 200
+        assert captured["data"]["bio"] == ["PDF from DB"]
+        assert captured["out_pdf"] == tmp_path / "cv.pdf"
+        assert api_app["data_file"].read_text(encoding="utf-8") == before_file
+
     def test_edit_page_without_master_returns_404(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

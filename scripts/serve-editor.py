@@ -39,6 +39,7 @@ from cvbuilder.composer import CvComposer
 from cvbuilder.database import SnippetDatabase
 from cvbuilder.document_store import DocumentStore
 from cvbuilder.importer import SnippetImporter
+from cvbuilder.markdown_export import MarkdownExporter
 from cvbuilder.matcher import SnippetMatcher
 from cvbuilder.models import (
     CvDocument,
@@ -83,6 +84,8 @@ _APP_ENV = JinjaEnvironment(
 PREVIEW_PDF = cvweb.REPO_ROOT / "cv" / "current" / "cv.pdf"
 DEFAULT_DB = cvweb.REPO_ROOT / "data" / "snippets.db"
 VARIANTS_DIR = cvweb.REPO_ROOT / "cv" / "variants"
+EXPORT_FORMATS = frozenset({"yaml", "markdown", "pdf"})
+EXPORT_DOCUMENT_KINDS = frozenset({"master", "variant"})
 ASSETS_DIR = cvweb.REPO_ROOT / "assets" / "images"
 ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico"}
 IMAGE_CONTENT_TYPES = {
@@ -158,6 +161,69 @@ def _master_data(store: DocumentStore) -> tuple[CvDocument, Any]:
     if not isinstance(data, dict):
         raise ValueError("Master CV YAML must be a mapping")
     return document, data
+
+
+def _export_document_data(
+    store: DocumentStore, payload: dict[str, Any]
+) -> tuple[CvDocument, dict[str, Any]]:
+    """Return the requested export document and parsed YAML content."""
+    kind = str(payload.get("document", "master")).strip().lower()
+    if kind not in EXPORT_DOCUMENT_KINDS:
+        raise ValueError("document must be one of: master, variant")
+    if kind == "master":
+        document = _master_document(store)
+    else:
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            raise ValueError("name is required for variant export")
+        document = store.get_variant(name)
+        if document is None:
+            raise LookupError(f"CV variant {name!r} is not available")
+    data = cvweb.load_data_text(document.content_yaml)
+    if not isinstance(data, dict):
+        label = "Master CV" if kind == "master" else f"CV variant {document.name!r}"
+        raise ValueError(f"{label} YAML must be a mapping")
+    return document, data
+
+
+def _default_export_path(document: CvDocument, export_format: str) -> Path:
+    """Return the default output path for an export request."""
+    if document.kind == "variant" and document.name:
+        safe = _safe_name(document.name)
+        if not safe:
+            raise ValueError("variant name is invalid")
+        variant_dir = VARIANTS_DIR / safe
+        if export_format == "yaml":
+            return variant_dir / "data.yaml"
+        if export_format == "markdown":
+            return variant_dir / f"{safe}.md"
+        return variant_dir / f"{safe}.pdf"
+    if export_format == "yaml":
+        return cvweb.DATA_FILE
+    if export_format == "markdown":
+        return PREVIEW_PDF.with_suffix(".md")
+    return PREVIEW_PDF
+
+
+def _export_path(
+    payload: dict[str, Any], document: CvDocument, export_format: str
+) -> Path:
+    """Resolve an export output path from the payload or defaults."""
+    raw_path = str(payload.get("path", "")).strip()
+    if not raw_path:
+        return _default_export_path(document, export_format)
+    path = Path(raw_path).expanduser()
+    if path.is_absolute():
+        return path
+    return cvweb.REPO_ROOT / path
+
+
+def _relative_export_path(path: Path) -> str:
+    """Return a repo-relative path for JSON responses when possible."""
+    try:
+        return path.relative_to(cvweb.REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def _master_unavailable_html(exc: Exception) -> str:
@@ -498,16 +564,56 @@ def api_redo() -> Any:
 
 @app.post("/api/export")
 def api_export() -> Any:
-    """Render the current data.yaml to the preview PDF."""
-    cvweb.export_pdf(PREVIEW_PDF)
-    return jsonify(ok=True)
+    """Export a DB-backed CV document as YAML, Markdown, or PDF."""
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify(error="payload must be an object"), 400
+    export_format = str(payload.get("format", "pdf")).strip().lower()
+    if export_format not in EXPORT_FORMATS:
+        return jsonify(error="format must be one of: yaml, markdown, pdf"), 400
+
+    store = _document_store()
+    try:
+        document, data = _export_document_data(store, payload)
+        out_path = _export_path(payload, document, export_format)
+    except LookupError as exc:
+        return jsonify(error=str(exc)), 404
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        if export_format == "yaml":
+            out_path.write_text(document.content_yaml, encoding="utf-8")
+        elif export_format == "markdown":
+            out_path.write_text(MarkdownExporter().render(data), encoding="utf-8")
+        else:
+            cvweb.export_pdf(out_path, data=data)
+    except (OSError, RuntimeError, SystemExit) as exc:
+        return jsonify(error=str(exc)), 500
+
+    return jsonify(
+        ok=True,
+        format=export_format,
+        document=document.kind,
+        name=document.name,
+        path=_relative_export_path(out_path),
+    )
 
 
 @app.get("/api/preview.pdf")
 def api_preview_pdf() -> Any:
     """Serve the preview PDF, generating it first if missing."""
     if not PREVIEW_PDF.exists():
-        cvweb.export_pdf(PREVIEW_PDF)
+        store = _document_store()
+        try:
+            _, data = _master_data(store)
+        except (LookupError, ValueError) as exc:
+            return jsonify(error=str(exc)), 404
+        try:
+            cvweb.export_pdf(PREVIEW_PDF, data=data)
+        except (OSError, RuntimeError, SystemExit) as exc:
+            return jsonify(error=str(exc)), 500
     return send_from_directory(
         PREVIEW_PDF.parent, PREVIEW_PDF.name, mimetype="application/pdf"
     )
