@@ -56,13 +56,20 @@ def find_chrome() -> str:
     sys.exit("No Chrome/Chromium binary found on PATH")
 
 
-def load_data():
-    with DATA_FILE.open() as f:
+def load_data_text(text: str) -> Any:
+    """Parse CV YAML from text without reading ``DATA_FILE``."""
+    return _yaml.load(text)
+
+
+def load_data() -> Any:
+    """Load CV YAML from the configured filesystem data file."""
+    with DATA_FILE.open(encoding="utf-8") as f:
         return _yaml.load(f)
 
 
-def save_data(data) -> None:
-    with DATA_FILE.open("w") as f:
+def save_data(data: Any) -> None:
+    """Write CV YAML to the configured filesystem data file."""
+    with DATA_FILE.open("w", encoding="utf-8") as f:
         _yaml.dump(data, f)
 
 
@@ -218,7 +225,19 @@ def edit_history(path: Optional[Path] = None) -> EditHistory:
     return EditHistory(path=path)
 
 
-def render_html(data=None, edit_mode: bool = False) -> str:
+def render_cv_body(data: Optional[Any] = None, *, edit_mode: bool = False) -> str:
+    """Render ``cv_body.html.j2`` with CV data and no page chrome."""
+    if data is None:
+        data = load_data()
+    env = Environment(loader=FileSystemLoader(str(WEB_DIR)))
+    return env.get_template("cv_body.html.j2").render(
+        edit_mode=edit_mode,
+        **data,
+    )
+
+
+def render_html(data: Optional[Any] = None, edit_mode: bool = False) -> str:
+    """Render the standalone CV HTML document for print and export."""
     if data is None:
         data = load_data()
     env = Environment(loader=FileSystemLoader(str(WEB_DIR)))
@@ -245,11 +264,13 @@ def print_to_pdf(html_path: Path, out_pdf: Path) -> None:
     )
 
 
-def export_pdf(out_pdf: Path, data=None) -> None:
-    """Render the (non-editable) CV and print it to out_pdf."""
+def export_pdf(out_pdf: Path, data: Optional[Any] = None) -> None:
+    """Render the CV from a dict, YAML text, or the filesystem fallback."""
+    if isinstance(data, str):
+        data = load_data_text(data)
     html = render_html(data=data, edit_mode=False)
     out_html = WEB_DIR / "_rendered.html"
-    out_html.write_text(html)
+    out_html.write_text(html, encoding="utf-8")
     try:
         print_to_pdf(out_html, out_pdf)
     finally:
@@ -375,6 +396,10 @@ def _default_insert_value(list_path: str, value: Any) -> Any:
         panel.update(new_item_content.PANEL)
         panel["items"] = CommentedSeq([new_item_content.GENERIC_ITEM])
         return panel
+    if list_path == "person.profiles":
+        profile = CommentedMap()
+        profile.update(new_item_content.PROFILE)
+        return profile
     return new_item_content.GENERIC_ITEM
 
 

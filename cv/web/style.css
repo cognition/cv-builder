@@ -275,22 +275,26 @@ html, body {
 
 /* ---------- editor-only affordances (no effect on the printed PDF) ---------- */
 
-body.edit-mode [contenteditable="true"] {
+body.edit-mode [contenteditable="true"],
+.cv-document.edit-mode [contenteditable="true"] {
   border-radius: 2px;
   outline: 1px dashed transparent;
   transition: outline-color 0.1s, background-color 0.1s;
 }
 
-body.edit-mode [contenteditable="true"]:hover {
+body.edit-mode [contenteditable="true"]:hover,
+.cv-document.edit-mode [contenteditable="true"]:hover {
   outline-color: rgba(46, 89, 132, 0.4);
 }
 
-body.edit-mode [contenteditable="true"]:focus {
+body.edit-mode [contenteditable="true"]:focus,
+.cv-document.edit-mode [contenteditable="true"]:focus {
   outline: 1px dashed var(--steel);
   background-color: rgba(46, 89, 132, 0.06);
 }
 
-body.edit-mode {
+body.edit-mode,
+.cv-document.edit-mode {
   padding-bottom: 3.5in;
   position: relative;
   background: #4a4e55;
@@ -298,18 +302,22 @@ body.edit-mode {
 
 /* Render the document as a Letter-width sheet so pagination is visible. */
 body.edit-mode .hero,
-body.edit-mode .content {
+body.edit-mode .content,
+.cv-document.edit-mode .hero,
+.cv-document.edit-mode .content {
   width: 8.5in;
   margin-left: auto;
   margin-right: auto;
   background: #fff;
 }
 
-body.edit-mode .hero {
+body.edit-mode .hero,
+.cv-document.edit-mode .hero {
   box-shadow: 0 0 14px rgba(0, 0, 0, 0.4);
 }
 
-body.edit-mode .content {
+body.edit-mode .content,
+.cv-document.edit-mode .content {
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
 }
 
@@ -366,7 +374,9 @@ body.edit-mode .content {
 }
 
 body.edit-mode.preview-open .hero,
-body.edit-mode.preview-open .content {
+body.edit-mode.preview-open .content,
+.cv-document.edit-mode.preview-open .hero,
+.cv-document.edit-mode.preview-open .content {
   margin-left: max(0.15in, calc((58vw - 8.5in) / 2));
   margin-right: auto;
 }
@@ -427,7 +437,8 @@ body.edit-mode.preview-open .content {
   white-space: nowrap;
 }
 
-body.edit-mode.guides-off #page-guides {
+body.edit-mode.guides-off #page-guides,
+.cv-document.edit-mode.guides-off #page-guides {
   display: none;
 }
 
@@ -435,13 +446,17 @@ body.edit-mode.guides-off #page-guides {
    so page estimates are not inflated by controls that never print. */
 body.guides-measuring .struct-controls,
 body.guides-measuring .struct-add-section,
-body.guides-measuring .panel-toolbar {
+body.guides-measuring .panel-toolbar,
+.cv-document.guides-measuring .struct-controls,
+.cv-document.guides-measuring .struct-add-section,
+.cv-document.guides-measuring .panel-toolbar {
   display: none !important;
 }
 
 /* ---------- structural editing controls (screen only) ---------- */
 
-body.edit-mode .struct-controls {
+body.edit-mode .struct-controls,
+.cv-document.edit-mode .struct-controls {
   display: inline-flex;
   gap: 2px;
   margin-left: 4px;
@@ -457,17 +472,29 @@ body.edit-mode h2:hover + .struct-controls,
 body.edit-mode h3:hover + .struct-controls,
 body.edit-mode h4:hover + .struct-controls,
 body.edit-mode span:hover + .struct-controls,
+.cv-document.edit-mode li:hover > .struct-controls,
+.cv-document.edit-mode li:hover + .struct-controls,
+.cv-document.edit-mode p:hover + .struct-controls,
+.cv-document.edit-mode h2:hover + .struct-controls,
+.cv-document.edit-mode h3:hover + .struct-controls,
+.cv-document.edit-mode h4:hover + .struct-controls,
+.cv-document.edit-mode span:hover + .struct-controls,
 /* Whole-job and whole-subsection controls sit at the front of their block
    (a subsection may have no heading to anchor a trailing-sibling hover to),
    so reveal them on hover anywhere in the block, not just the leading edge. */
 body.edit-mode .job:hover > .struct-controls,
 body.edit-mode .subsection:hover > .struct-controls,
-body.edit-mode .struct-controls:hover {
+body.edit-mode .struct-controls:hover,
+.cv-document.edit-mode .job:hover > .struct-controls,
+.cv-document.edit-mode .subsection:hover > .struct-controls,
+.cv-document.edit-mode .struct-controls:hover {
   opacity: 1;
 }
 
 body.edit-mode .struct-btn,
-body.edit-mode .struct-add-section {
+body.edit-mode .struct-add-section,
+.cv-document.edit-mode .struct-btn,
+.cv-document.edit-mode .struct-add-section {
   font: inherit;
   font-size: 8.5pt;
   line-height: 1;
@@ -480,7 +507,8 @@ body.edit-mode .struct-add-section {
 }
 
 /* Side-panel tooling stays readable on the navy sidebar. */
-body.edit-mode .side-panel .panel-toolbar {
+body.edit-mode .side-panel .panel-toolbar,
+.cv-document.edit-mode .side-panel .panel-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
@@ -490,30 +518,39 @@ body.edit-mode .side-panel .panel-toolbar {
 
 body.edit-mode .side-panel .panel-toolbar .struct-btn,
 body.edit-mode .sidebar .struct-add-section,
-body.edit-mode .side-panel .struct-add-section {
+body.edit-mode .side-panel .struct-add-section,
+.cv-document.edit-mode .side-panel .panel-toolbar .struct-btn,
+.cv-document.edit-mode .sidebar .struct-add-section,
+.cv-document.edit-mode .side-panel .struct-add-section {
   background: rgba(255, 255, 255, 0.95);
   border-color: rgba(255, 255, 255, 0.55);
   color: var(--navy);
   opacity: 1;
 }
 
-body.edit-mode .sidebar .struct-controls {
+body.edit-mode .sidebar .struct-controls,
+.cv-document.edit-mode .sidebar .struct-controls {
   opacity: 0.55;
 }
 
 body.edit-mode .sidebar li:hover + .struct-controls,
-body.edit-mode .sidebar .struct-controls:hover {
+body.edit-mode .sidebar .struct-controls:hover,
+.cv-document.edit-mode .sidebar li:hover + .struct-controls,
+.cv-document.edit-mode .sidebar .struct-controls:hover {
   opacity: 1;
 }
 
-body.edit-mode .struct-add-section {
+body.edit-mode .struct-add-section,
+.cv-document.edit-mode .struct-add-section {
   display: inline-block;
   margin: 0.08in 0.05in 0.12in;
   opacity: 0.55;
 }
 
 body.edit-mode .struct-add-section:hover,
-body.edit-mode .struct-btn:hover {
+body.edit-mode .struct-btn:hover,
+.cv-document.edit-mode .struct-add-section:hover,
+.cv-document.edit-mode .struct-btn:hover {
   opacity: 1;
   background: #e8eef7;
 }
@@ -534,11 +571,13 @@ body.edit-mode .struct-btn:hover {
 
 /* ---------- image picker (screen only) ---------- */
 
-body.edit-mode .photo-editable {
+body.edit-mode .photo-editable,
+.cv-document.edit-mode .photo-editable {
   cursor: pointer;
 }
 
-body.edit-mode .photo-editable:hover {
+body.edit-mode .photo-editable:hover,
+.cv-document.edit-mode .photo-editable:hover {
   outline: 2px dashed rgba(255, 255, 255, 0.6);
   outline-offset: 3px;
 }

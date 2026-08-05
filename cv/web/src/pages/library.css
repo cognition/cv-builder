@@ -72,8 +72,13 @@
 }
 
 .library footer span { color: var(--muted); font-size: 9px; }
-.library footer .row-actions { display: flex; gap: 4px; }
+.library footer .row-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .library footer button { padding: 4px 8px; border: 0; background: transparent; color: var(--green); font-size: 9px; font-weight: 750; }
+.library footer button.primary {
+  background: var(--green);
+  color: #fff;
+  border-radius: 6px;
+}
 .library footer button.danger { color: var(--danger); }
 
 /* ---------- create/edit modal ---------- */

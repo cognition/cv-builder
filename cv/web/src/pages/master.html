@@ -1,0 +1,26 @@
+{% extends "shell/base.html" %}
+{% block title %}CV Studio — Master CV{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/src/pages/master.css">
+{% endblock %}
+{% block header_actions %}
+<div id="editor-toolbar" class="master-toolbar">
+  <button type="button" id="btn-save" class="primary">Save &amp; Preview</button>
+  <span id="editor-status">Loaded.</span>
+</div>
+{% endblock %}
+{% block content %}
+<div class="master-workspace">
+  <div class="cv-document edit-mode">
+    {{ cv_body_html | safe }}
+  </div>
+  <div id="preview-pane" aria-hidden="true">
+    <button type="button" id="preview-close" aria-label="Close preview">&times;</button>
+    <iframe id="preview-frame" src="about:blank" title="CV PDF preview"></iframe>
+  </div>
+</div>
+{% endblock %}
+{% block extra_body %}
+<script src="/editor.js"></script>
+{% endblock %}

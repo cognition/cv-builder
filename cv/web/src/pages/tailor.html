@@ -1,6 +1,6 @@
 {% extends "shell/base.html" %}
 {% block title %}CV Studio — Tailor{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="/cv/web/src/pages/tailor.css">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/src/pages/tailor.css">{% endblock %}
 {% block header_actions %}
 <div class="header-tools">
   <select id="draft-select"><option value="">Saved drafts — select…</option></select>
@@ -18,7 +18,7 @@
         <b>1</b>
         <div><h2>What role are you applying for?</h2><p>Paste the posting and we'll surface your most relevant experience.</p></div>
       </div>
-      <label>Version name<input id="variant-name" type="text" placeholder="e.g. ircc-it04"></label>
+      <label>Draft / pin label<input id="variant-name" type="text" placeholder="e.g. ircc-it04 (optional; pins Working Draft on save)"></label>
       <label>Job posting<textarea id="posting-text" rows="6" placeholder="Paste a job posting or requirements here…"></textarea></label>
       <footer>
         <small id="posting-count">0 characters</small>
@@ -66,11 +66,11 @@
       <small>YOUR DRAFT</small>
       <div class="metric"><b id="metric">0</b><span>Selected snippets<small id="metric-hint">Add content to begin</small></span></div>
       <ol id="draft-list" class="draft-list"></ol>
-      <button type="button" class="primary" id="btn-compose">Save &amp; Preview PDF</button>
+      <button type="button" class="primary" id="btn-compose">Update Working Draft &amp; Preview</button>
       <span id="builder-status" class="hint"></span>
     </div>
   </div>
 </div>
 <div id="preview-pane"><iframe id="preview-frame" src="about:blank" title="PDF preview"></iframe></div>
 {% endblock %}
-{% block extra_body %}<script src="/cv/web/src/pages/tailor.js"></script>{% endblock %}
+{% block extra_body %}<script src="/src/pages/tailor.js"></script>{% endblock %}

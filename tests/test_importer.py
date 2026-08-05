@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cvbuilder.database import SnippetDatabase
+from cvbuilder.document_store import DocumentStore
 from cvbuilder.importer import SnippetImporter
 from cvbuilder.models import DetailLevel
 
@@ -51,3 +52,34 @@ class TestSnippetImporter:
         assert first == second
         all_snippets = database.list_snippets()
         assert len(all_snippets) == sum(first.values())
+
+    def test_seed_prefers_database_master_document(
+        self, repo_fixture: Path, tmp_path: Path
+    ) -> None:
+        """Importer should seed YAML sections from DB master when available."""
+        database = SnippetDatabase(tmp_path / "seed-db-master.db")
+        database.ensure_schema()
+        DocumentStore(database).upsert_master(
+            """
+person:
+  first_name: DB
+  last_name: Master
+bio:
+  - DB-only bio paragraph.
+skills:
+  technical:
+    - Rust
+  functional: []
+experience: []
+education: []
+""".lstrip()
+        )
+        importer = SnippetImporter(database=database, repo_root=repo_fixture)
+
+        stats = importer.seed()
+
+        assert stats["yaml_bio"] == 1
+        assert stats["yaml_skills"] == 1
+        headings = {snippet.heading for snippet in database.list_snippets()}
+        assert "Rust" in headings
+        assert "Python" not in headings

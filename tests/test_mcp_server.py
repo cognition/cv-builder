@@ -9,6 +9,8 @@ import pytest
 from ruamel.yaml import YAML
 
 from cvbuilder import mcp_server
+from cvbuilder.database import SnippetDatabase
+from cvbuilder.document_store import DocumentStore
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -126,10 +128,13 @@ class TestReseedAndCompose:
         assert stats["yaml_bio"] >= 1
         assert mcp_server.list_snippets()
 
-    def test_compose_cv_writes_data_yaml(
-        self, repo_fixture: Path, monkeypatch: pytest.MonkeyPatch
+    def test_compose_cv_stores_database_variant_without_yaml(
+        self,
+        repo_fixture: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        _snippets_db: Path,
     ) -> None:
-        """Composing without PDF rendering should write a valid data.yaml."""
+        """Composing without export flags should only save the DB variant."""
         monkeypatch.setattr(mcp_server, "REPO_ROOT", repo_fixture)
         mcp_server.reseed_snippets()
         bio = mcp_server.list_snippets(category="bio")[0]
@@ -147,12 +152,16 @@ class TestReseedAndCompose:
         )
         assert result["ok"] is True
         assert result["pdf"] is None
+        assert result["data_yaml"] is None
+        assert (
+            repo_fixture / "cv" / "variants" / "mcp-test-variant" / "data.yaml"
+        ).exists() is False
 
-        data_path = repo_fixture / result["data_yaml"]
-        assert data_path.is_file()
+        store = DocumentStore(SnippetDatabase(_snippets_db))
+        variant = store.get_variant("mcp-test-variant")
+        assert variant is not None
         yaml = YAML(typ="safe")
-        with data_path.open(encoding="utf-8") as handle:
-            document = yaml.load(handle)
+        document = yaml.load(variant.content_yaml)
         assert document["bio"]
 
         variants = mcp_server.list_variants()

@@ -33,14 +33,23 @@ def repo_fixture(tmp_path: Path) -> Path:
     (web / "data.yaml").write_text(
         """
 person:
-  name: Test Person
+  first_name: Test
+  last_name: Person
   tagline: Builder
   quote: Test quote
   photo: "../../assets/images/test.jpg"
   email: test@example.com
   mobile: "555-0100"
-  github: {handle: tester, url: "https://example.com/gh"}
-  linkedin: {handle: tester, url: "https://example.com/li"}
+  address:
+    city: Testville
+    region: ""
+    country: Testland
+    postal_code: ""
+    street: ""
+    display: city
+  profiles:
+    - {provider: github, handle: tester, url: "https://example.com/gh", visible: true}
+    - {provider: linkedin, handle: tester, url: "https://example.com/li", visible: true}
   strengths: ["Learner"]
 
 skills:

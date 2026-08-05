@@ -94,6 +94,7 @@
         <footer>
           <span class="word-count"></span>
           <div class="row-actions">
+            <button type="button" class="primary" data-action="add-working">Add to Working Draft</button>
             <button type="button" data-action="edit">Edit</button>
             <button type="button" class="danger" data-action="delete">Delete</button>
           </div>
@@ -116,6 +117,11 @@
         });
       });
       card.querySelector('[data-action="edit"]').addEventListener("click", () => openForm(snippet));
+      card.querySelector('[data-action="add-working"]').addEventListener("click", () => {
+        addToWorkingDraft(snippet, card).catch((err) =>
+          setStatus("Error: " + err.message)
+        );
+      });
       card.querySelector('[data-action="delete"]').addEventListener("click", () => {
         if (!confirm(`Delete snippet "${snippetLabel(snippet)}"?`)) return;
         fetch(`/api/snippets/${snippet.id}`, { method: "DELETE" })
@@ -228,6 +234,42 @@
     closeForm();
     await loadSnippets();
     showToast(wasEdit ? "Snippet updated." : `Created snippet #${body.id}.`);
+  }
+
+  async function addToWorkingDraft(snippet, card) {
+    const activeLevel =
+      card.querySelector(".level-tabs button.active")?.getAttribute("data-level") ||
+      "standard";
+    const levels = LEVELS.filter((level) => levelContent(snippet, level));
+    const detailLevel = levels.includes(activeLevel)
+      ? activeLevel
+      : levels[0] || "standard";
+    if (!levelContent(snippet, detailLevel)) {
+      showToast("This snippet has no content at the selected level.");
+      return;
+    }
+    const resp = await fetch("/api/working-draft/add-snippets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        selections: [
+          {
+            snippet_id: snippet.id,
+            detail_level: detailLevel,
+            section: snippet.category || null,
+          },
+        ],
+      }),
+    });
+    const body = await resp.json();
+    if (!resp.ok) throw new Error(body.error || "failed to add to Working Draft");
+    if (body.added_count > 0) {
+      showToast(
+        `Added to Working Draft (${detailLevel}). Open Working Draft CV to review.`
+      );
+    } else {
+      showToast("Already in Working Draft — skipped duplicate.");
+    }
   }
 
   async function reseed() {

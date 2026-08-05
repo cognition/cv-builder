@@ -12,6 +12,7 @@ from typing import Any, Optional
 from ruamel.yaml import YAML
 
 from cvbuilder.database import SnippetDatabase
+from cvbuilder.document_store import DocumentStore
 from cvbuilder.models import DetailLevel, Snippet, SnippetVariant
 
 LOGGER = logging.getLogger(__name__)
@@ -27,15 +28,18 @@ class SnippetImporter:
         self,
         database: SnippetDatabase,
         repo_root: Path,
+        content_yaml: Optional[str] = None,
     ) -> None:
         """Initialise the importer.
 
         Args:
             database: Target snippet database.
             repo_root: Repository root path.
+            content_yaml: Optional master YAML content to seed instead of storage.
         """
         self.database = database
         self.repo_root = Path(repo_root)
+        self.content_yaml = content_yaml
         self.data_file = self.repo_root / "cv" / "web" / "data.yaml"
         self.content_dir = self.repo_root / "content"
 
@@ -53,16 +57,29 @@ class SnippetImporter:
             "yaml_education": 0,
             "markdown": 0,
         }
-        if self.data_file.is_file():
-            data = self._load_yaml(self.data_file)
+        data = self._load_master_yaml()
+        if data is not None:
             stats["yaml_bio"] = self._import_bio(data)
             stats["yaml_skills"] = self._import_skills(data)
             stats["yaml_experience"] = self._import_experience(data)
             stats["yaml_education"] = self._import_education(data)
-        else:
-            LOGGER.warning("Missing data file: %s", self.data_file)
         stats["markdown"] = self._import_markdown_tree()
         return stats
+
+    def _load_master_yaml(self) -> Optional[dict[str, Any]]:
+        """Load master YAML from explicit content, DB storage, or filesystem."""
+        if self.content_yaml is not None:
+            return self._load_yaml_text(self.content_yaml, "provided master YAML")
+
+        document = DocumentStore(self.database).get_master()
+        if document is not None:
+            return self._load_yaml_text(document.content_yaml, "database master document")
+
+        if self.data_file.is_file():
+            return self._load_yaml(self.data_file)
+
+        LOGGER.warning("Missing data file: %s", self.data_file)
+        return None
 
     def _load_yaml(self, path: Path) -> dict[str, Any]:
         """Load a YAML mapping from disk."""
@@ -70,6 +87,13 @@ class SnippetImporter:
             loaded = _YAML.load(handle) or {}
         if not isinstance(loaded, dict):
             raise ValueError(f"Expected mapping in {path}")
+        return loaded
+
+    def _load_yaml_text(self, content_yaml: str, source: str) -> dict[str, Any]:
+        """Load a YAML mapping from text content."""
+        loaded = _YAML.load(content_yaml) or {}
+        if not isinstance(loaded, dict):
+            raise ValueError(f"Expected mapping in {source}")
         return loaded
 
     def _import_bio(self, data: dict[str, Any]) -> int:

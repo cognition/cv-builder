@@ -1,0 +1,131 @@
+/*
+ * Master CV page: wraps the contenteditable CV document (style.css) inside
+ * the Studio shell. Only overlay/header-chrome/scroll concerns live here —
+ * the printed document's own look stays in cv/web/style.css.
+ *
+ * IMPORTANT: style.css still defines a legacy full-bleed editor preview
+ * (`#preview-pane { position: fixed; right: 0; … }` with a viewport-fraction
+ * width). Every rule below that targets the preview MUST outrank that
+ * selector (use `.master-workspace #preview-pane…`) and fully reset
+ * top/right/bottom/left/width so the drawer cannot paint over the Studio
+ * aside.
+ */
+
+.master-workspace {
+  position: relative;
+  min-height: calc(100vh - 86px);
+  padding: 34px 34px 80px;
+  background: #dde2dd;
+  /* Clip the preview drawer to the main column. */
+  overflow: hidden;
+}
+
+/* When the PDF drawer is open, main's sticky header stays above it. */
+.shell > main {
+  position: relative;
+  isolation: isolate;
+}
+
+.shell > main > header {
+  z-index: 600;
+}
+
+/* Header actions: Save & Preview + status, inline in the sticky header
+   instead of the old fixed bottom bar. */
+.master-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+#editor-toolbar.master-toolbar {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  box-shadow: none;
+  z-index: auto;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+#editor-toolbar.master-toolbar button {
+  font: inherit;
+  padding: 9px 13px;
+}
+
+#editor-toolbar.master-toolbar #editor-status {
+  opacity: 1;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Nav-duplicate links + the old bottom-bar Home/Tailor/… list are
+   redundant now that the Studio left nav covers every destination. */
+.master-toolbar .editor-links {
+  display: none;
+}
+
+/*
+ * Preview drawer — covers only `.master-workspace` (the main column body
+ * under the sticky header). Never viewport-fixed; never the legacy
+ * side-drawer width from style.css.
+ */
+.master-workspace #preview-pane {
+  display: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: auto;
+  max-width: none;
+  border: none;
+  background: #525659;
+  z-index: 500;
+}
+
+.master-workspace #preview-pane.open {
+  display: block;
+}
+
+.master-workspace #preview-pane iframe {
+  position: absolute;
+  inset: 0;
+  top: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.master-workspace #preview-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 501;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.master-workspace #preview-close:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+/* Cancel the legacy side-by-side margin shove from style.css while the
+   Studio drawer covers the document instead of sitting beside it. */
+.master-workspace .cv-document.edit-mode.preview-open .hero,
+.master-workspace .cv-document.edit-mode.preview-open .content {
+  margin-left: auto;
+  margin-right: auto;
+}

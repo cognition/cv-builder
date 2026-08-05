@@ -8,7 +8,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, Iterable, Optional
 
-from cvbuilder.models import Draft, Snippet, SnippetVariant
+from cvbuilder.models import (
+    Draft,
+    Question,
+    QuestionEvidence,
+    QuestionSource,
+    ResumeImport,
+    Snippet,
+    SnippetVariant,
+)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS snippets (
@@ -40,10 +48,83 @@ CREATE TABLE IF NOT EXISTS drafts (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS question_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'form',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id INTEGER NOT NULL,
+    prompt TEXT NOT NULL,
+    answer TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(source_id) REFERENCES question_sources(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS question_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question_id INTEGER NOT NULL,
+    snippet_id INTEGER NOT NULL,
+    detail_level TEXT NOT NULL DEFAULT 'standard',
+    UNIQUE(question_id, snippet_id),
+    FOREIGN KEY(question_id) REFERENCES questions(id) ON DELETE CASCADE,
+    FOREIGN KEY(snippet_id) REFERENCES snippets(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS resume_imports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    file_type TEXT NOT NULL,
+    stored_path TEXT NOT NULL,
+    snippet_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_snippets_category ON snippets(category);
 CREATE INDEX IF NOT EXISTS idx_snippets_company ON snippets(company);
 CREATE INDEX IF NOT EXISTS idx_variants_level ON snippet_variants(detail_level);
 CREATE INDEX IF NOT EXISTS idx_drafts_name ON drafts(name);
+CREATE INDEX IF NOT EXISTS idx_questions_source ON questions(source_id);
+CREATE INDEX IF NOT EXISTS idx_question_evidence_question ON question_evidence(question_id);
+CREATE INDEX IF NOT EXISTS idx_resume_imports_created ON resume_imports(created_at);
+
+CREATE TABLE IF NOT EXISTS cv_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    name TEXT,
+    content_yaml TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cv_documents_variant_name
+    ON cv_documents(name) WHERE kind = 'variant';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cv_documents_one_master
+    ON cv_documents(kind) WHERE kind = 'master';
+
+CREATE TABLE IF NOT EXISTS cv_history (
+    document_id INTEGER PRIMARY KEY,
+    undo_json TEXT NOT NULL DEFAULT '[]',
+    redo_json TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(document_id) REFERENCES cv_documents(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cv_pins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    content_yaml TEXT NOT NULL,
+    undo_json TEXT NOT NULL DEFAULT '[]',
+    redo_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(document_id) REFERENCES cv_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_cv_pins_document ON cv_pins(document_id);
 """
 
 
@@ -498,6 +579,336 @@ class SnippetDatabase:
                 )
             )
         return result
+
+    # ---------- application questions ----------
+
+    def create_question_source(self, source: QuestionSource) -> int:
+        """Insert a question source and return its id.
+
+        Args:
+            source: Source metadata (title + type).
+
+        Returns:
+            The new source's primary key.
+        """
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO question_sources (title, source_type, created_at)
+                VALUES (?, ?, datetime('now'))
+                """,
+                (source.title, source.source_type),
+            )
+            return int(cursor.lastrowid)
+
+    def list_question_sources(self) -> list[QuestionSource]:
+        """Return all question sources, newest first."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM question_sources ORDER BY created_at DESC, id DESC"
+            ).fetchall()
+            return [self._row_to_source(row) for row in rows]
+
+    def get_question_source(self, source_id: int) -> Optional[QuestionSource]:
+        """Load one question source by id."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM question_sources WHERE id = ?", (source_id,)
+            ).fetchone()
+            return self._row_to_source(row) if row else None
+
+    def delete_question_source(self, source_id: int) -> bool:
+        """Delete a question source and its questions/evidence.
+
+        Args:
+            source_id: Primary key of the source.
+
+        Returns:
+            True if a row was deleted.
+        """
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM question_sources WHERE id = ?", (source_id,)
+            )
+            return cursor.rowcount > 0
+
+    def create_question(self, question: Question) -> int:
+        """Insert a question under an existing source and return its id.
+
+        Args:
+            question: Question with a populated ``source_id`` and ``prompt``.
+
+        Returns:
+            The new question's primary key.
+
+        Raises:
+            ValueError: If ``source_id`` or ``prompt`` is missing.
+        """
+        if question.source_id is None:
+            raise ValueError("question.source_id is required")
+        if not question.prompt.strip():
+            raise ValueError("question.prompt is required")
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO questions (source_id, prompt, answer, created_at)
+                VALUES (?, ?, ?, datetime('now'))
+                """,
+                (question.source_id, question.prompt.strip(), question.answer or ""),
+            )
+            return int(cursor.lastrowid)
+
+    def list_questions(self, source_id: Optional[int] = None) -> list[Question]:
+        """List questions, optionally scoped to one source.
+
+        Args:
+            source_id: If given, only return questions under this source.
+
+        Returns:
+            Questions with source metadata and linked evidence attached.
+        """
+        clause = "WHERE q.source_id = ?" if source_id is not None else ""
+        params: list[Any] = [source_id] if source_id is not None else []
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT q.*, src.title AS source_title, src.source_type AS source_type
+                FROM questions q
+                JOIN question_sources src ON src.id = q.source_id
+                {clause}
+                ORDER BY q.created_at ASC, q.id ASC
+                """,
+                params,
+            ).fetchall()
+            question_ids = [int(row["id"]) for row in rows]
+            evidence_by_question = self._load_evidence(connection, question_ids)
+            return [
+                self._row_to_question(row, evidence_by_question.get(int(row["id"]), []))
+                for row in rows
+            ]
+
+    def get_question(self, question_id: int) -> Optional[Question]:
+        """Load one question with source metadata and evidence."""
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT q.*, src.title AS source_title, src.source_type AS source_type
+                FROM questions q
+                JOIN question_sources src ON src.id = q.source_id
+                WHERE q.id = ?
+                """,
+                (question_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            evidence = self._load_evidence(connection, [question_id]).get(question_id, [])
+            return self._row_to_question(row, evidence)
+
+    def update_question_answer(self, question_id: int, answer: str) -> bool:
+        """Update a question's saved answer text.
+
+        Args:
+            question_id: Primary key of the question.
+            answer: New answer text.
+
+        Returns:
+            True if a row was updated.
+        """
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE questions SET answer = ? WHERE id = ?",
+                (answer, question_id),
+            )
+            return cursor.rowcount > 0
+
+    def delete_question(self, question_id: int) -> bool:
+        """Delete a question and its evidence links."""
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM questions WHERE id = ?", (question_id,)
+            )
+            return cursor.rowcount > 0
+
+    def add_question_evidence(
+        self, question_id: int, snippet_id: int, detail_level: str = "standard"
+    ) -> None:
+        """Link a snippet as evidence for a question (idempotent).
+
+        Args:
+            question_id: Question to attach evidence to.
+            snippet_id: Snippet being cited as evidence.
+            detail_level: Which variant of the snippet is being cited.
+        """
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO question_evidence (question_id, snippet_id, detail_level)
+                VALUES (?, ?, ?)
+                ON CONFLICT(question_id, snippet_id) DO UPDATE SET
+                    detail_level = excluded.detail_level
+                """,
+                (question_id, snippet_id, detail_level),
+            )
+
+    def remove_question_evidence(self, question_id: int, snippet_id: int) -> bool:
+        """Unlink a snippet from a question's evidence.
+
+        Returns:
+            True if a row was deleted.
+        """
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                DELETE FROM question_evidence
+                WHERE question_id = ? AND snippet_id = ?
+                """,
+                (question_id, snippet_id),
+            )
+            return cursor.rowcount > 0
+
+    def create_resume_import(self, resume_import: ResumeImport) -> int:
+        """Insert a resume-import record and return its id.
+
+        Args:
+            resume_import: Metadata for the uploaded file, including how
+                many snippets it produced.
+
+        Returns:
+            The new record's primary key.
+        """
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO resume_imports
+                    (filename, file_type, stored_path, snippet_count, created_at)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                """,
+                (
+                    resume_import.filename,
+                    resume_import.file_type,
+                    resume_import.stored_path,
+                    resume_import.snippet_count,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def list_resume_imports(self) -> list[ResumeImport]:
+        """Return all resume imports, newest first."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM resume_imports ORDER BY created_at DESC, id DESC"
+            ).fetchall()
+            return [self._row_to_resume_import(row) for row in rows]
+
+    def get_resume_import(self, import_id: int) -> Optional[ResumeImport]:
+        """Load one resume-import record by id."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM resume_imports WHERE id = ?", (import_id,)
+            ).fetchone()
+            return self._row_to_resume_import(row) if row else None
+
+    def delete_resume_import(self, import_id: int) -> bool:
+        """Delete a resume-import record (the stored file is not touched).
+
+        Returns:
+            True if a row was deleted.
+        """
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM resume_imports WHERE id = ?", (import_id,)
+            )
+            return cursor.rowcount > 0
+
+    def existing_content_hashes(self, hashes: list[str]) -> set[str]:
+        """Return which of ``hashes`` already exist on a stored snippet.
+
+        Used to flag likely-duplicate content in the import review UI
+        before it's created as a new snippet.
+        """
+        hashes = [value for value in hashes if value]
+        if not hashes:
+            return set()
+        placeholders = ",".join("?" for _ in hashes)
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT DISTINCT content_hash FROM snippets
+                WHERE content_hash IN ({placeholders})
+                """,
+                hashes,
+            ).fetchall()
+            return {str(row["content_hash"]) for row in rows}
+
+    def _load_evidence(
+        self, connection: sqlite3.Connection, question_ids: Iterable[int]
+    ) -> dict[int, list[QuestionEvidence]]:
+        """Load evidence links (with snippet heading/company) for questions."""
+        ids = list(question_ids)
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        rows = connection.execute(
+            f"""
+            SELECT qe.question_id, qe.snippet_id, qe.detail_level,
+                   s.heading AS heading, s.company AS company
+            FROM question_evidence qe
+            JOIN snippets s ON s.id = qe.snippet_id
+            WHERE qe.question_id IN ({placeholders})
+            ORDER BY qe.id ASC
+            """,
+            ids,
+        ).fetchall()
+        result: dict[int, list[QuestionEvidence]] = {}
+        for row in rows:
+            qid = int(row["question_id"])
+            result.setdefault(qid, []).append(
+                QuestionEvidence(
+                    snippet_id=int(row["snippet_id"]),
+                    detail_level=str(row["detail_level"]),
+                    heading=row["heading"],
+                    company=row["company"],
+                )
+            )
+        return result
+
+    @staticmethod
+    def _row_to_source(row: sqlite3.Row) -> QuestionSource:
+        """Convert a question_sources row into a QuestionSource model."""
+        return QuestionSource(
+            id=int(row["id"]),
+            title=str(row["title"]),
+            source_type=str(row["source_type"]),
+            created_at=str(row["created_at"]) if row["created_at"] else None,
+        )
+
+    @staticmethod
+    def _row_to_question(
+        row: sqlite3.Row, evidence: list[QuestionEvidence]
+    ) -> Question:
+        """Convert a questions row (joined with its source) into a Question."""
+        return Question(
+            id=int(row["id"]),
+            source_id=int(row["source_id"]),
+            source_title=str(row["source_title"]),
+            source_type=str(row["source_type"]),
+            prompt=str(row["prompt"]),
+            answer=str(row["answer"] or ""),
+            created_at=str(row["created_at"]) if row["created_at"] else None,
+            evidence=evidence,
+        )
+
+    @staticmethod
+    def _row_to_resume_import(row: sqlite3.Row) -> ResumeImport:
+        """Convert a resume_imports row into a ResumeImport model."""
+        return ResumeImport(
+            id=int(row["id"]),
+            filename=str(row["filename"]),
+            file_type=str(row["file_type"]),
+            stored_path=str(row["stored_path"]),
+            snippet_count=int(row["snippet_count"]),
+            created_at=str(row["created_at"]) if row["created_at"] else None,
+        )
 
     @staticmethod
     def _row_to_snippet(

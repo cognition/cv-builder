@@ -1,6 +1,6 @@
 {% extends "shell/base.html" %}
 {% block title %}CV Studio — Assets{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="/cv/web/src/pages/assets.css">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/src/pages/assets.css">{% endblock %}
 {% block header_actions %}<button type="button" class="primary" id="upload-trigger">+ Add asset</button>{% endblock %}
 {% block content %}
 <div class="view active">
@@ -42,6 +42,7 @@
         <h3 id="inspector-name"></h3>
         <p id="inspector-meta"></p>
         <button class="primary" id="use-asset">Use as profile photo</button>
+        <button type="button" class="danger" id="delete-asset">Delete asset</button>
       </div>
     </aside>
   </div>
@@ -74,4 +75,4 @@
   </div>
 </div>
 {% endblock %}
-{% block extra_body %}<script src="/cv/web/src/pages/assets.js"></script>{% endblock %}
+{% block extra_body %}<script src="/src/pages/assets.js"></script>{% endblock %}

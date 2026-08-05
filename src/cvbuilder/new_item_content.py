@@ -34,3 +34,10 @@ JOB = {
 PANEL = {
     "title": "New Panel",
 }
+
+PROFILE = {
+    "provider": "website",
+    "handle": "New profile",
+    "url": "",
+    "visible": True,
+}
