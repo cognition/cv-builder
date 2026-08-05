@@ -10,6 +10,7 @@ from ruamel.yaml import YAML
 
 from cvbuilder.composer import CvComposer
 from cvbuilder.database import SnippetDatabase
+from cvbuilder.document_store import DocumentStore
 from cvbuilder.importer import SnippetImporter
 from cvbuilder.models import DetailLevel
 
@@ -67,7 +68,12 @@ class TestCvComposer:
                 "section": "experience",
             },
         ]
-        result = composer.compose(name="test-variant", selections=selections)
+        result = composer.compose(
+            name="test-variant",
+            selections=selections,
+            render_pdf=True,
+            export_yaml=True,
+        )
         assert result["ok"] is True
         data_path = repo_fixture / result["data_yaml"]
         assert data_path.is_file()
@@ -80,6 +86,42 @@ class TestCvComposer:
         assert document["skills"]["technical"] or document["skills"]["functional"]
         assert document["experience"]
         assert (repo_fixture / result["pdf"]).is_file()
+
+    def test_compose_stores_variant_in_database_without_yaml(
+        self,
+        repo_fixture: Path,
+        tmp_path: Path,
+    ) -> None:
+        """Default compose should save the variant document without exporting YAML."""
+        database = SnippetDatabase(tmp_path / "compose.db")
+        SnippetImporter(database=database, repo_root=repo_fixture).seed()
+        composer = CvComposer(database=database, repo_root=repo_fixture)
+
+        bio = database.list_snippets(category="bio")[0]
+        selections = [
+            {
+                "snippet_id": bio.id,
+                "detail_level": DetailLevel.STANDARD.value,
+                "section": "bio",
+            }
+        ]
+        result = composer.compose(
+            name="oncall",
+            selections=selections,
+            render_pdf=False,
+            export_yaml=False,
+        )
+
+        assert result["ok"] is True
+        assert result["pdf"] is None
+        assert (
+            repo_fixture / "cv" / "variants" / "oncall" / "data.yaml"
+        ).exists() is False
+        store = DocumentStore(database)
+        variant = store.get_variant("oncall")
+        assert variant is not None
+        assert "person" in variant.content_yaml
+        assert "First bio paragraph" in variant.content_yaml
 
     def test_compose_rejects_empty_name(
         self, repo_fixture: Path, snippet_db: SnippetDatabase

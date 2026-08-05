@@ -268,6 +268,16 @@ def _parse_tags(raw: Any) -> list[str]:
     return []
 
 
+def _payload_bool(payload: dict[str, Any], key: str, default: bool = False) -> bool:
+    """Return a boolean flag from JSON or query-string values."""
+    raw = payload.get(key, request.args.get(key, default))
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(raw)
+
+
 def _render_page(template_name: str, **context: Any) -> str:
     """Render one of the real app-chrome pages through the shared shell."""
     return _APP_ENV.get_template(template_name).render(**context)
@@ -769,7 +779,7 @@ def api_match() -> Any:
 
 @app.post("/api/compose")
 def api_compose() -> Any:
-    """Compose selected snippet variants into a named CV variant and PDF."""
+    """Compose selected snippet variants into a named DB-backed CV variant."""
     payload = request.get_json(force=True) or {}
     name = str(payload.get("name", "")).strip()
     if not name:
@@ -780,7 +790,12 @@ def api_compose() -> Any:
     database = _database()
     composer = CvComposer(database=database, repo_root=cvweb.REPO_ROOT)
     try:
-        result = composer.compose(name=name, selections=selections)
+        result = composer.compose(
+            name=name,
+            selections=selections,
+            render_pdf=_payload_bool(payload, "render_pdf", False),
+            export_yaml=_payload_bool(payload, "export_yaml", False),
+        )
     except (KeyError, ValueError, OSError, RuntimeError) as exc:
         return jsonify(error=str(exc)), 400
     return jsonify(result)
@@ -1274,78 +1289,83 @@ def api_fetch_image() -> Any:
 
 
 def _list_variants() -> list[dict[str, Any]]:
-    """Describe every composed CV variant under cv/variants/, newest first."""
+    """Describe every DB-backed composed CV variant, newest first."""
     variants: list[dict[str, Any]] = []
-    if VARIANTS_DIR.is_dir():
-        for path in sorted(VARIANTS_DIR.iterdir()):
-            if not path.is_dir():
-                continue
-            data_yaml = path / "data.yaml"
-            if not data_yaml.is_file():
-                continue
-            pdfs = sorted(path.glob("*.pdf"))
-            pdf_path: Optional[Path] = pdfs[0] if pdfs else None
-            mtime_ts = data_yaml.stat().st_mtime
-            mtime = datetime.fromtimestamp(mtime_ts, tz=timezone.utc).isoformat()
-            variants.append(
-                {
-                    "name": path.name,
-                    "data_yaml": str(data_yaml.relative_to(cvweb.REPO_ROOT)),
-                    "pdf": (
-                        str(pdf_path.relative_to(cvweb.REPO_ROOT))
-                        if pdf_path
-                        else None
-                    ),
-                    "updated_at": mtime,
-                    "_mtime": mtime_ts,
-                }
-            )
-    variants.sort(key=lambda item: item["_mtime"], reverse=True)
-    for item in variants:
-        del item["_mtime"]
+    store = _document_store()
+    for document in store.list_variants():
+        if not document.name:
+            continue
+        safe = _safe_name(document.name)
+        if not safe:
+            continue
+        variant_dir = VARIANTS_DIR / safe
+        data_yaml = variant_dir / "data.yaml"
+        pdf_path = variant_dir / f"{safe}.pdf"
+        variants.append(
+            {
+                "name": document.name,
+                "data_yaml": (
+                    str(data_yaml.relative_to(cvweb.REPO_ROOT))
+                    if data_yaml.is_file()
+                    else None
+                ),
+                "pdf": (
+                    str(pdf_path.relative_to(cvweb.REPO_ROOT))
+                    if pdf_path.is_file()
+                    else None
+                ),
+                "updated_at": document.updated_at,
+            }
+        )
+    variants.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
     return variants
 
 
 @app.get("/api/variants")
 def api_list_variants() -> Any:
-    """List composed CV variants under cv/variants/."""
+    """List DB-backed composed CV variants."""
     return jsonify(_list_variants())
 
 
 @app.delete("/api/variants/<name>")
 def api_delete_variant_folder(name: str) -> Any:
-    """Delete a composed variant directory."""
+    """Delete a DB-backed composed variant and any leftover export files."""
     safe = _safe_name(name)
     if not safe:
         return jsonify(error="invalid variant name"), 400
+    store = _document_store()
+    try:
+        store.delete_variant(safe)
+    except KeyError:
+        return jsonify(error="not found"), 404
     target = (VARIANTS_DIR / safe).resolve()
     variants_root = VARIANTS_DIR.resolve()
     try:
         target.relative_to(variants_root)
     except ValueError:
         return jsonify(error="invalid path"), 400
-    if not target.is_dir():
-        return jsonify(error="not found"), 404
-    shutil.rmtree(target)
+    if target.is_dir():
+        shutil.rmtree(target)
     return jsonify(ok=True)
 
 
 @app.post("/api/variants/<name>/render")
 def api_render_variant(name: str) -> Any:
-    """Re-render a composed variant's PDF from its data.yaml."""
+    """Render a composed variant PDF from its DB-backed YAML."""
     safe = _safe_name(name)
     if not safe:
         return jsonify(error="invalid variant name"), 400
-    data_path = VARIANTS_DIR / safe / "data.yaml"
-    if not data_path.is_file():
+    store = _document_store()
+    document = store.get_variant(safe)
+    if document is None:
         return jsonify(error="not found"), 404
-    with data_path.open(encoding="utf-8") as handle:
-        document = _VARIANT_YAML.load(handle) or {}
-    if not isinstance(document, dict):
-        return jsonify(error="invalid data.yaml"), 400
+    data = _VARIANT_YAML.load(document.content_yaml) or {}
+    if not isinstance(data, dict):
+        return jsonify(error="invalid variant YAML"), 400
     pdf_path = VARIANTS_DIR / safe / f"{safe}.pdf"
     try:
-        cvweb.export_pdf(pdf_path, data=document)
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        cvweb.export_pdf(pdf_path, data=data)
     except (OSError, RuntimeError, SystemExit) as exc:
         return jsonify(error=str(exc)), 500
     return jsonify(

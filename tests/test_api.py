@@ -161,6 +161,35 @@ class TestApiEndpoints:
         assert body[0]["snippet_id"]
         assert "python" in body[0]["matched_terms"]
 
+    def test_compose_defaults_to_database_variant(
+        self, client: "FlaskClient", api_app: dict[str, Any], repo_fixture: Path
+    ) -> None:
+        """POST /api/compose should save a DB variant without exporting files."""
+        response = client.post(
+            "/api/compose",
+            json={
+                "name": "api-compose",
+                "selections": [
+                    {
+                        "snippet_id": 1,
+                        "detail_level": "standard",
+                        "section": "skill",
+                    }
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["data_yaml"] is None
+        assert body["pdf"] is None
+        assert (
+            repo_fixture / "cv" / "variants" / "api-compose" / "data.yaml"
+        ).exists() is False
+        variant = api_app["document_store"].get_variant("api-compose")
+        assert variant is not None
+        assert "Python development" in variant.content_yaml
+
     def test_delete_variant_level(self, client: "FlaskClient") -> None:
         """DELETE /api/snippets/<id>/variants/<level> should remove one level."""
         created = client.post(
@@ -411,13 +440,17 @@ class TestApiEndpoints:
         assert "Master CV document is not available" in person.get_json()["error"]
 
     def test_variants_list_and_delete(
-        self, client: "FlaskClient", repo_fixture: Path, monkeypatch: pytest.MonkeyPatch
+        self, client: "FlaskClient", api_app: dict[str, Any], repo_fixture: Path
     ) -> None:
-        """Variant list/delete should operate on cv/variants folders."""
+        """Variant list/delete should operate on DB-backed variant documents."""
         variant_dir = repo_fixture / "cv" / "variants" / "sample"
         variant_dir.mkdir(parents=True, exist_ok=True)
         (variant_dir / "data.yaml").write_text("person: {}\n", encoding="utf-8")
         (variant_dir / "sample.pdf").write_bytes(b"%PDF-1.4")
+        api_app["document_store"].upsert_variant(
+            "sample",
+            "person:\n  first_name: Variant\n  last_name: Person\n",
+        )
 
         listed = client.get("/api/variants")
         assert listed.status_code == 200
@@ -426,7 +459,45 @@ class TestApiEndpoints:
 
         deleted = client.delete("/api/variants/sample")
         assert deleted.status_code == 200
+        assert api_app["document_store"].get_variant("sample") is None
         assert not variant_dir.exists()
+
+    def test_render_variant_uses_database_document(
+        self,
+        client: "FlaskClient",
+        api_app: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Variant rendering should export a PDF from the DB document content."""
+        api_app["document_store"].upsert_variant(
+            "db-render",
+            "\n".join(
+                [
+                    "person:",
+                    "  first_name: Render",
+                    "  last_name: Person",
+                    "bio:",
+                    "  - Rendered bio",
+                    "",
+                ]
+            ),
+        )
+
+        def _fake_export(pdf_path: Path, data: Any = None) -> None:
+            """Skip Chrome and write a tiny PDF marker."""
+            assert isinstance(data, dict)
+            assert data["bio"] == ["Rendered bio"]
+            pdf_path.parent.mkdir(parents=True, exist_ok=True)
+            pdf_path.write_bytes(b"%PDF-1.4 fake")
+
+        monkeypatch.setattr(api_app["cvweb"], "export_pdf", _fake_export)
+
+        rendered = client.post("/api/variants/db-render/render")
+
+        assert rendered.status_code == 200
+        body = rendered.get_json()
+        assert body["ok"] is True
+        assert body["pdf"] == "cv/variants/db-render/db-render.pdf"
 
     def test_image_upload_and_list(
         self, client: "FlaskClient", repo_fixture: Path

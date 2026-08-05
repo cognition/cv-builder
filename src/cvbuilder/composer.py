@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sys
 from copy import deepcopy
+from io import StringIO
 from pathlib import Path
 from typing import Any, Optional
 
@@ -12,6 +13,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import FoldedScalarString
 
 from cvbuilder.database import SnippetDatabase
+from cvbuilder.document_store import DocumentStore
 from cvbuilder.models import DetailLevel, SelectionItem
 
 _YAML = YAML()
@@ -45,9 +47,14 @@ class CvComposer:
         self,
         name: str,
         selections: list[dict[str, Any]] | list[SelectionItem],
-        render_pdf: bool = True,
+        render_pdf: bool = False,
+        export_yaml: bool = False,
     ) -> dict[str, Any]:
-        """Compose a CV variant from selected snippets.
+        """Upsert a variant document in the database.
+
+        When ``export_yaml`` is True, also write
+        ``cv/variants/<name>/data.yaml``. When ``render_pdf`` is True, also
+        write the variant PDF.
 
         Args:
             name: Variant folder name under ``cv/variants/``.
@@ -55,6 +62,7 @@ class CvComposer:
                 Each item needs ``snippet_id`` and optional ``detail_level`` /
                 ``section``.
             render_pdf: When True, also write a PDF beside the data.yaml.
+            export_yaml: When True, also export the variant YAML file.
 
         Returns:
             Paths and summary for the composed variant.
@@ -70,21 +78,28 @@ class CvComposer:
         items = self._normalise_selections(selections)
         base = self._load_base_data()
         document = self._build_document(base, items)
+        document_yaml = self._dump_yaml(document)
+        DocumentStore(self.database).upsert_variant(safe_name, document_yaml)
 
         out_dir = self.variants_dir / safe_name
-        out_dir.mkdir(parents=True, exist_ok=True)
-        data_path = out_dir / "data.yaml"
-        self._write_yaml(data_path, document)
+        data_path: Optional[Path] = None
+        if export_yaml:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            data_path = out_dir / "data.yaml"
+            data_path.write_text(document_yaml, encoding="utf-8")
 
         pdf_path: Optional[Path] = None
         if render_pdf:
+            out_dir.mkdir(parents=True, exist_ok=True)
             pdf_path = out_dir / f"{safe_name}.pdf"
             self._export_pdf(document, pdf_path)
 
         return {
             "ok": True,
             "name": safe_name,
-            "data_yaml": str(data_path.relative_to(self.repo_root)),
+            "data_yaml": (
+                str(data_path.relative_to(self.repo_root)) if data_path else None
+            ),
             "pdf": (
                 str(pdf_path.relative_to(self.repo_root)) if pdf_path else None
             ),
@@ -194,15 +209,15 @@ class CvComposer:
         cvweb.export_pdf(pdf_path, data=document)
 
     def _load_base_data(self) -> dict[str, Any]:
-        """Load the base person/header fields from the web CV data.yaml."""
-        if not self.base_data_path.is_file():
-            raise FileNotFoundError(
-                f"base data.yaml not found: {self.base_data_path}"
-            )
-        with self.base_data_path.open(encoding="utf-8") as handle:
-            data = _YAML.load(handle) or {}
+        """Load the base person/header fields from the DB-backed master CV."""
+        store = DocumentStore(self.database)
+        store.bootstrap_from_filesystem(self.repo_root)
+        master = store.get_master()
+        if master is None:
+            raise FileNotFoundError("Master CV document is not available")
+        data = _YAML.load(master.content_yaml) or {}
         if not isinstance(data, dict):
-            raise ValueError("base data.yaml must be a mapping")
+            raise ValueError("Master CV YAML must be a mapping")
         # Keep person + empty shells; content sections are rebuilt.
         return {
             "person": deepcopy(data.get("person") or {}),
@@ -217,6 +232,13 @@ class CvComposer:
         """Write a YAML document to disk."""
         with path.open("w", encoding="utf-8") as handle:
             _YAML.dump(document, handle)
+
+    @staticmethod
+    def _dump_yaml(document: dict[str, Any]) -> str:
+        """Serialise a YAML document to text."""
+        buffer = StringIO()
+        _YAML.dump(document, buffer)
+        return buffer.getvalue()
 
     @staticmethod
     def _normalise_selections(

@@ -90,11 +90,15 @@ def before_all(context: Any) -> None:
             self,
             name: str,
             selections: Any,
-            render_pdf: bool = True,
+            render_pdf: bool = False,
+            export_yaml: bool = False,
         ) -> dict[str, Any]:
             """Compose without PDF rendering (avoids browser deps in BDD)."""
             return super().compose(
-                name=name, selections=selections, render_pdf=False
+                name=name,
+                selections=selections,
+                render_pdf=False,
+                export_yaml=export_yaml,
             )
 
     namespace["CvComposer"] = _IsolatedComposer

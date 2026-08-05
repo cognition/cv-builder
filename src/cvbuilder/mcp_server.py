@@ -23,6 +23,7 @@ from mcp.server.fastmcp import FastMCP
 
 from cvbuilder.composer import CvComposer
 from cvbuilder.database import SnippetDatabase
+from cvbuilder.document_store import DocumentStore
 from cvbuilder.importer import SnippetImporter
 from cvbuilder.matcher import SnippetMatcher
 from cvbuilder.models import Snippet, SnippetVariant
@@ -44,7 +45,7 @@ mcp = FastMCP(
         "match_job_posting with the posting text to find relevant "
         "snippets, list/inspect/create snippets to fill gaps, then "
         "compose_cv with an ordered list of {snippet_id, detail_level, "
-        "section} selections to render cv/variants/<name>/data.yaml + PDF."
+        "section} selections to store a tailored DB-backed variant."
     ),
     # Only consulted for streamable-http/sse transport; harmless for stdio.
     host=MCP_HOST,
@@ -64,6 +65,14 @@ def _database() -> SnippetDatabase:
     database = SnippetDatabase(path)
     database.ensure_schema()
     return database
+
+
+def _document_store() -> DocumentStore:
+    """Open the DB-backed CV document store, bootstrapping filesystem data once."""
+    database = _database()
+    store = DocumentStore(database)
+    store.bootstrap_from_filesystem(REPO_ROOT)
+    return store
 
 
 def _parse_tags(raw: Any) -> list[str]:
@@ -266,13 +275,16 @@ def match_job_posting(
 
 @mcp.tool()
 def compose_cv(
-    name: str, selections: list[dict[str, Any]], render_pdf: bool = True
+    name: str,
+    selections: list[dict[str, Any]],
+    render_pdf: bool = False,
+    export_yaml: bool = False,
 ) -> dict[str, Any]:
     """Compose a named CV variant from an ordered list of snippet selections.
 
-    Writes ``cv/variants/<name>/data.yaml`` (and a PDF alongside it, unless
-    ``render_pdf`` is false). Re-running with the same ``name`` overwrites
-    the previous variant.
+    Stores a DB-backed variant document. Re-running with the same ``name``
+    overwrites the previous variant. Set ``export_yaml`` to also write
+    ``cv/variants/<name>/data.yaml``; set ``render_pdf`` to also export a PDF.
 
     Args:
         name: Variant folder name under ``cv/variants/`` (sanitised
@@ -281,24 +293,39 @@ def compose_cv(
             "detail_level": "brief"|"standard"|"detailed",
             "section": str (optional, defaults to the snippet's category)}``.
             Order controls the order content appears in the composed CV.
-        render_pdf: When true, also render a PDF beside the data.yaml.
+        render_pdf: When true, also export a PDF.
+        export_yaml: When true, also export ``data.yaml``.
     """
     composer = CvComposer(_database(), REPO_ROOT)
-    return composer.compose(name, selections, render_pdf=render_pdf)
+    return composer.compose(
+        name,
+        selections,
+        render_pdf=render_pdf,
+        export_yaml=export_yaml,
+    )
 
 
 @mcp.tool()
 def list_variants() -> list[dict[str, Any]]:
-    """List composed CV variants under ``cv/variants/`` with their files."""
-    variants_dir = REPO_ROOT / "cv" / "variants"
-    if not variants_dir.is_dir():
-        return []
+    """List DB-backed composed CV variants with any exported files."""
     results: list[dict[str, Any]] = []
-    for entry in sorted(variants_dir.iterdir()):
-        if not entry.is_dir():
+    variants_dir = REPO_ROOT / "cv" / "variants"
+    for document in _document_store().list_variants():
+        if not document.name:
             continue
-        files = sorted(p.name for p in entry.iterdir() if p.is_file())
-        results.append({"name": entry.name, "files": files})
+        variant_dir = variants_dir / document.name
+        files = (
+            sorted(p.name for p in variant_dir.iterdir() if p.is_file())
+            if variant_dir.is_dir()
+            else []
+        )
+        results.append(
+            {
+                "name": document.name,
+                "files": files,
+                "updated_at": document.updated_at,
+            }
+        )
     return results
 
 
