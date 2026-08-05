@@ -7,7 +7,7 @@ from collections import defaultdict
 from typing import Any, Optional
 
 from cvbuilder.database import SnippetDatabase
-from cvbuilder.models import DetailLevel
+from cvbuilder.models import DetailLevel, Snippet, SnippetVariant
 
 VALID_CATEGORIES: frozenset[str] = frozenset(
     {"bio", "skill", "experience", "education", "part", "requirement"}
@@ -141,3 +141,229 @@ class LibraryOps:
             "length_outliers": length_outliers,
             "duplicate_candidates": duplicate_candidates,
         }
+
+    def upsert_snippets(
+        self,
+        snippets: list[dict[str, Any]],
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Batch create or update snippets from structured items.
+
+        Args:
+            snippets: Items with optional ``id``, metadata, and ``variants``.
+            dry_run: When True (default), plan only; do not write.
+
+        Returns:
+            Plan or apply result with created/updated/errors and counts.
+        """
+        created: list[dict[str, Any]] = []
+        updated: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+
+        for index, raw in enumerate(snippets):
+            try:
+                item = self._normalise_upsert_item(raw)
+            except ValueError as exc:
+                errors.append({"index": index, "message": str(exc)})
+                continue
+
+            snippet_id = item.get("id")
+            if snippet_id is None:
+                summary = self._summarise_item(item)
+                if dry_run:
+                    created.append(
+                        {
+                            "id": None,
+                            "planned_index": index,
+                            "category": item["category"],
+                            "summary": summary,
+                        }
+                    )
+                else:
+                    new_id = self._apply_create(item)
+                    created.append(
+                        {
+                            "id": new_id,
+                            "planned_index": index,
+                            "category": item["category"],
+                            "summary": summary,
+                        }
+                    )
+            else:
+                existing = self._database.get_snippet(int(snippet_id))
+                if existing is None:
+                    errors.append(
+                        {
+                            "index": index,
+                            "message": f"snippet {snippet_id} not found",
+                        }
+                    )
+                    continue
+                summary = self._summarise_item(item, existing=existing)
+                if not dry_run:
+                    self._apply_update(existing, item)
+                updated.append({"id": int(snippet_id), "summary": summary})
+
+        return {
+            "dry_run": dry_run,
+            "created": created,
+            "updated": updated,
+            "errors": errors,
+            "counts": {
+                "created": len(created),
+                "updated": len(updated),
+                "errors": len(errors),
+            },
+        }
+
+    def _normalise_upsert_item(self, raw: Any) -> dict[str, Any]:
+        """Validate and normalise one upsert payload item.
+
+        Args:
+            raw: Untyped item from the batch payload.
+
+        Returns:
+            Normalised item dict ready for create or update.
+
+        Raises:
+            ValueError: When the item is invalid.
+        """
+        if not isinstance(raw, dict):
+            raise ValueError("snippet item must be an object")
+        snippet_id = raw.get("id")
+        category = raw.get("category")
+        variants_raw = raw.get("variants") or {}
+        if not isinstance(variants_raw, dict):
+            raise ValueError("variants must be an object")
+        variants: dict[str, str] = {}
+        for level, content in variants_raw.items():
+            if level not in DETAIL_LEVELS:
+                raise ValueError(f"invalid detail level {level!r}")
+            text = str(content).strip() if content is not None else ""
+            if not text:
+                raise ValueError(f"variant {level!r} content is empty")
+            variants[str(level)] = str(content)
+
+        if snippet_id is None:
+            if category is None or not str(category).strip():
+                raise ValueError("category is required when creating")
+            if str(category) not in VALID_CATEGORIES:
+                raise ValueError(f"invalid category {category!r}")
+            if not variants:
+                raise ValueError("at least one variant is required when creating")
+        else:
+            if category is not None and str(category) not in VALID_CATEGORIES:
+                raise ValueError(f"invalid category {category!r}")
+
+        tags = raw.get("tags")
+        parsed_tags: Optional[list[str]]
+        if tags is None:
+            parsed_tags = None
+        elif isinstance(tags, list):
+            parsed_tags = [str(tag).strip() for tag in tags if str(tag).strip()]
+        elif isinstance(tags, str):
+            parsed_tags = [part.strip() for part in tags.split(",") if part.strip()]
+        else:
+            raise ValueError("tags must be a list or comma-separated string")
+
+        return {
+            "id": int(snippet_id) if snippet_id is not None else None,
+            "category": str(category) if category is not None else None,
+            "company": raw.get("company"),
+            "role": raw.get("role"),
+            "heading": raw.get("heading"),
+            "tags": parsed_tags,
+            "variants": variants,
+            "has_company": "company" in raw,
+            "has_role": "role" in raw,
+            "has_heading": "heading" in raw,
+        }
+
+    def _summarise_item(
+        self,
+        item: dict[str, Any],
+        existing: Optional[Snippet] = None,
+    ) -> str:
+        """Build a short human-readable summary for plan/result rows.
+
+        Args:
+            item: Normalised upsert item.
+            existing: Existing snippet when updating.
+
+        Returns:
+            Pipe-separated summary string.
+        """
+        category = item.get("category") or (
+            existing.category if existing is not None else "?"
+        )
+        heading = item.get("heading")
+        if heading is None and existing is not None:
+            heading = existing.heading
+        company = item.get("company")
+        if company is None and existing is not None:
+            company = existing.company
+        bits = [str(category)]
+        if company:
+            bits.append(str(company))
+        if heading:
+            bits.append(str(heading))
+        levels = sorted(item.get("variants") or {})
+        if levels:
+            bits.append("variants=" + ",".join(levels))
+        return " | ".join(bits)
+
+    def _apply_create(self, item: dict[str, Any]) -> int:
+        """Persist a new snippet and its variants.
+
+        Args:
+            item: Normalised create item.
+
+        Returns:
+            New snippet primary key.
+        """
+        snippet_id = self._database.create_snippet(
+            Snippet(
+                category=str(item["category"]),
+                company=item.get("company"),
+                role=item.get("role"),
+                heading=item.get("heading"),
+                tags=list(item["tags"] or []),
+            )
+        )
+        for level, content in item["variants"].items():
+            self._database.upsert_variant(
+                SnippetVariant(
+                    snippet_id=snippet_id,
+                    detail_level=level,
+                    content=content,
+                )
+            )
+        return snippet_id
+
+    def _apply_update(self, existing: Snippet, item: dict[str, Any]) -> None:
+        """Apply metadata and variant upserts to an existing snippet.
+
+        Args:
+            existing: Snippet loaded from the database.
+            item: Normalised update item.
+        """
+        if item.get("category") is not None:
+            existing.category = str(item["category"])
+        if item.get("has_company"):
+            existing.company = item.get("company")
+        if item.get("has_role"):
+            existing.role = item.get("role")
+        if item.get("has_heading"):
+            existing.heading = item.get("heading")
+        if item.get("tags") is not None:
+            existing.tags = list(item["tags"] or [])
+        self._database.update_snippet(existing)
+        assert existing.id is not None
+        for level, content in item["variants"].items():
+            self._database.upsert_variant(
+                SnippetVariant(
+                    snippet_id=int(existing.id),
+                    detail_level=level,
+                    content=content,
+                )
+            )

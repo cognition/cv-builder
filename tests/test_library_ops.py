@@ -126,3 +126,108 @@ class TestAuditLibrary:
         report = LibraryOps(database).audit()
         assert report["counts_by_category"]["bio"] == 1
         assert report["counts_by_category"]["skill"] == 1
+
+
+class TestUpsertSnippets:
+    """Batch create/update with dry-run default."""
+
+    def test_dry_run_does_not_persist(self, database: SnippetDatabase) -> None:
+        """dry_run=True plans a create but leaves the DB empty."""
+        ops = LibraryOps(database)
+        result = ops.upsert_snippets(
+            [
+                {
+                    "category": "skill",
+                    "tags": ["python"],
+                    "variants": {"standard": "- Python mastery " + ("x" * 20)},
+                }
+            ],
+            dry_run=True,
+        )
+        assert result["dry_run"] is True
+        assert result["counts"]["created"] == 1
+        assert database.list_snippets() == []
+
+    def test_apply_creates_snippet(self, database: SnippetDatabase) -> None:
+        """dry_run=False persists a new snippet with variants."""
+        ops = LibraryOps(database)
+        result = ops.upsert_snippets(
+            [
+                {
+                    "category": "skill",
+                    "role": "technical",
+                    "tags": ["python"],
+                    "variants": {
+                        "brief": "- Py " + ("b" * 20),
+                        "standard": "- Python " + ("s" * 20),
+                    },
+                }
+            ],
+            dry_run=False,
+        )
+        assert result["dry_run"] is False
+        assert result["counts"]["created"] == 1
+        created_id = result["created"][0]["id"]
+        assert created_id is not None
+        fetched = database.get_snippet(created_id)
+        assert fetched is not None
+        assert {v.detail_level for v in fetched.variants} == {"brief", "standard"}
+
+    def test_apply_updates_metadata_and_variant(
+        self, database: SnippetDatabase
+    ) -> None:
+        """Update by id replaces tags and upserts a variant."""
+        sid = _create(
+            database,
+            category="experience",
+            content="A" * 40,
+            company="OldCo",
+            role="Dev",
+            heading="Old",
+            tags=["old"],
+        )
+        result = LibraryOps(database).upsert_snippets(
+            [
+                {
+                    "id": sid,
+                    "heading": "New heading",
+                    "tags": ["new"],
+                    "variants": {"detailed": "- Extra detail " + ("d" * 20)},
+                }
+            ],
+            dry_run=False,
+        )
+        assert result["counts"]["updated"] == 1
+        fetched = database.get_snippet(sid)
+        assert fetched is not None
+        assert fetched.heading == "New heading"
+        assert fetched.tags == ["new"]
+        assert fetched.company == "OldCo"
+        assert fetched.variant_for("detailed") is not None
+
+    def test_partial_batch_records_errors(self, database: SnippetDatabase) -> None:
+        """Invalid items error; valid siblings still apply."""
+        result = LibraryOps(database).upsert_snippets(
+            [
+                {"category": "not-a-category", "variants": {"standard": "A" * 40}},
+                {
+                    "category": "bio",
+                    "tags": ["bio"],
+                    "variants": {"standard": "B" * 40},
+                },
+            ],
+            dry_run=False,
+        )
+        assert result["counts"]["errors"] == 1
+        assert result["counts"]["created"] == 1
+        assert result["errors"][0]["index"] == 0
+        assert len(database.list_snippets()) == 1
+
+    def test_create_requires_variant(self, database: SnippetDatabase) -> None:
+        """Create without variants is an error."""
+        result = LibraryOps(database).upsert_snippets(
+            [{"category": "skill", "tags": ["x"]}],
+            dry_run=False,
+        )
+        assert result["counts"]["errors"] == 1
+        assert result["counts"]["created"] == 0
