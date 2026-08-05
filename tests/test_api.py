@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generator
 
 import pytest
+from ruamel.yaml import YAML
 
 from cvbuilder.database import SnippetDatabase
+from cvbuilder.document_store import DocumentStore
 from cvbuilder.models import DetailLevel, Snippet, SnippetVariant
 
 if TYPE_CHECKING:
@@ -19,6 +21,18 @@ if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
     from pytest_mock.plugin import MockerFixture
     from flask.testing import FlaskClient
+
+
+def _master_text(api_app: dict[str, Any]) -> str:
+    """Return the master YAML text from the test document store."""
+    document = api_app["document_store"].get_master()
+    assert document is not None
+    return document.content_yaml
+
+
+def _master_data(api_app: dict[str, Any]) -> Any:
+    """Parse the master YAML text from the test document store."""
+    return YAML().load(_master_text(api_app))
 
 
 @pytest.fixture
@@ -102,6 +116,11 @@ def api_app(
             content="Python development",
         )
     )
+    document_store = DocumentStore(database)
+    document_store.bootstrap_from_filesystem(repo_fixture)
+    ns["document_store"] = document_store
+    ns["data_file"] = repo_fixture / "cv" / "web" / "data.yaml"
+    ns["client"] = ns["app"].test_client()
     yield ns
 
 
@@ -164,22 +183,42 @@ class TestApiEndpoints:
         assert "brief" not in levels
         assert "standard" in levels
 
+    def test_save_updates_database_not_file(self, api_app: dict[str, Any]) -> None:
+        """Saving an edit must mutate cv_documents, not the fixture YAML path."""
+        client = api_app["client"]
+        yaml_path = api_app["data_file"]
+        before_file = yaml_path.read_text(encoding="utf-8")
+        master_before = _master_text(api_app)
+
+        response = client.post(
+            "/api/save",
+            json=[{"path": "bio[0]", "value": "Saved only in DB"}],
+        )
+
+        assert response.status_code == 200
+        assert yaml_path.read_text(encoding="utf-8") == before_file
+        assert "Saved only in DB" in _master_text(api_app)
+        assert _master_text(api_app) != master_before
+
     def test_structure_replace_text(
         self, client: "FlaskClient", api_app: dict[str, Any]
     ) -> None:
         """POST /api/structure op=replace should overwrite a leaf value."""
+        before_file = api_app["data_file"].read_text(encoding="utf-8")
         resp = client.post(
             "/api/structure",
             json={"op": "replace", "path": "bio[0]", "value": "Replacement bio."},
         )
         assert resp.status_code == 200
-        data = api_app["cvweb"].load_data()
+        assert api_app["data_file"].read_text(encoding="utf-8") == before_file
+        data = _master_data(api_app)
         assert str(data["bio"][0]).strip() == "Replacement bio."
 
     def test_structure_replace_subsection(
         self, client: "FlaskClient", api_app: dict[str, Any]
     ) -> None:
         """op=replace-subsection should rebuild heading/paragraphs/bullets."""
+        before_file = api_app["data_file"].read_text(encoding="utf-8")
         resp = client.post(
             "/api/structure",
             json={
@@ -190,7 +229,8 @@ class TestApiEndpoints:
             },
         )
         assert resp.status_code == 200
-        data = api_app["cvweb"].load_data()
+        assert api_app["data_file"].read_text(encoding="utf-8") == before_file
+        data = _master_data(api_app)
         sub = data["experience"][0]["subsections"][0]
         assert sub["heading"] == "Swapped Heading"
         assert list(sub["bullets"]) == ["First bullet", "Second bullet"]
@@ -210,13 +250,15 @@ class TestApiEndpoints:
         self, client: "FlaskClient", api_app: dict[str, Any]
     ) -> None:
         """Structural changes should be reversible via /api/undo and /api/redo."""
-        before = api_app["cvweb"].read_data_text()
+        before = _master_text(api_app)
+        before_file = api_app["data_file"].read_text(encoding="utf-8")
         inserted = client.post(
             "/api/structure",
             json={"op": "insert", "path": "bio", "value": "Undo me"},
         )
         assert inserted.status_code == 200
         assert inserted.get_json()["can_undo"] is True
+        assert api_app["data_file"].read_text(encoding="utf-8") == before_file
 
         status = client.get("/api/history")
         assert status.status_code == 200
@@ -224,12 +266,14 @@ class TestApiEndpoints:
 
         undone = client.post("/api/undo")
         assert undone.status_code == 200
-        assert api_app["cvweb"].read_data_text() == before
+        assert _master_text(api_app) == before
+        assert api_app["data_file"].read_text(encoding="utf-8") == before_file
         assert undone.get_json()["can_redo"] is True
 
         redone = client.post("/api/redo")
         assert redone.status_code == 200
-        data = api_app["cvweb"].load_data()
+        assert api_app["data_file"].read_text(encoding="utf-8") == before_file
+        data = _master_data(api_app)
         assert "Undo me" in [str(part).strip() for part in data["bio"]]
 
     def test_empty_save_skips_history(self, client: "FlaskClient") -> None:

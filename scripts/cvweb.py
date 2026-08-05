@@ -56,13 +56,20 @@ def find_chrome() -> str:
     sys.exit("No Chrome/Chromium binary found on PATH")
 
 
-def load_data():
-    with DATA_FILE.open() as f:
+def load_data_text(text: str) -> Any:
+    """Parse CV YAML from text without reading ``DATA_FILE``."""
+    return _yaml.load(text)
+
+
+def load_data() -> Any:
+    """Load CV YAML from the configured filesystem data file."""
+    with DATA_FILE.open(encoding="utf-8") as f:
         return _yaml.load(f)
 
 
-def save_data(data) -> None:
-    with DATA_FILE.open("w") as f:
+def save_data(data: Any) -> None:
+    """Write CV YAML to the configured filesystem data file."""
+    with DATA_FILE.open("w", encoding="utf-8") as f:
         _yaml.dump(data, f)
 
 

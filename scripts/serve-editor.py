@@ -37,9 +37,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import cvweb
 from cvbuilder.composer import CvComposer
 from cvbuilder.database import SnippetDatabase
+from cvbuilder.document_store import DocumentStore
 from cvbuilder.importer import SnippetImporter
 from cvbuilder.matcher import SnippetMatcher
 from cvbuilder.models import (
+    CvDocument,
     DetailLevel,
     Question,
     QuestionSource,
@@ -133,6 +135,38 @@ def _database() -> SnippetDatabase:
     return database
 
 
+def _document_store() -> DocumentStore:
+    """Open the DB-backed CV document store, bootstrapping filesystem data once."""
+    database = _database()
+    store = DocumentStore(database)
+    store.bootstrap_from_filesystem(cvweb.REPO_ROOT)
+    return store
+
+
+def _master_document(store: DocumentStore) -> CvDocument:
+    """Return the bootstrapped Master CV document or raise a clear error."""
+    document = store.get_master()
+    if document is None:
+        raise LookupError("Master CV document is not available")
+    return document
+
+
+def _master_data(store: DocumentStore) -> tuple[CvDocument, Any]:
+    """Return the Master CV document and parsed YAML content."""
+    document = _master_document(store)
+    data = cvweb.load_data_text(document.content_yaml)
+    if not isinstance(data, dict):
+        raise ValueError("Master CV YAML must be a mapping")
+    return document, data
+
+
+def _history_status(store: DocumentStore, document: CvDocument) -> dict[str, Any]:
+    """Return history status for a persisted document."""
+    if document.id is None:
+        raise ValueError("Master CV document id is required")
+    return store.history_status(document.id)
+
+
 def _safe_name(name: str) -> str:
     """Sanitise a name for use as a directory or draft key."""
     cleaned = _SAFE_NAME_RE.sub("-", name.strip()).strip("-._")
@@ -205,7 +239,9 @@ def home_page() -> str:
 @app.get("/cv/web/edit")
 def edit_page() -> str:
     """Serve Master CV inside the Studio shell."""
-    body = cvweb.render_cv_body(edit_mode=True)
+    store = _document_store()
+    _, data = _master_data(store)
+    body = cvweb.render_cv_body(data=data, edit_mode=True)
     return _render_page(
         "pages/master.html",
         crumb="MASTER CV",
@@ -305,33 +341,43 @@ def _history() -> cvweb.EditHistory:
 
 @app.get("/api/person")
 def api_get_person() -> Any:
-    """Return the person block of data.yaml (read-only) for the Assets page."""
-    data = cvweb.load_data()
+    """Return the Master CV person block for the Assets page."""
+    store = _document_store()
+    try:
+        _, data = _master_data(store)
+    except (LookupError, ValueError) as exc:
+        return jsonify(error=str(exc)), 404
     person = data.get("person") if isinstance(data, dict) else None
     return jsonify(person if isinstance(person, dict) else {})
 
 
 @app.post("/api/save")
 def api_save() -> Any:
-    """Persist in-place editor edits back to data.yaml."""
+    """Persist in-place editor edits to the Master CV document."""
     edits = request.get_json(force=True)
     if not isinstance(edits, list):
         return jsonify(error="edits must be a list"), 400
+    store = _document_store()
+    try:
+        document, data = _master_data(store)
+    except (LookupError, ValueError) as exc:
+        return jsonify(error=str(exc)), 404
     if edits:
-        before = cvweb.read_data_text()
-        data = cvweb.load_data()
+        before = document.content_yaml
         for item in edits:
             cvweb.set_leaf(data, item["path"], item["value"])
         after = cvweb.dump_data_text(data)
         if after != before:
-            _history().push_before_change("save", text=before)
-            cvweb.write_data_text(after)
-    return jsonify(ok=True, **_history().status())
+            if document.id is None:
+                return jsonify(error="Master CV document id is required"), 500
+            store.push_before_change(document.id, "save", before)
+            document = store.upsert_master(after)
+    return jsonify(ok=True, **_history_status(store, document))
 
 
 @app.post("/api/structure")
 def api_structure() -> Any:
-    """Apply a structural insert/delete/move operation to data.yaml."""
+    """Apply a structural insert/delete/move operation to the Master CV."""
     payload = request.get_json(force=True) or {}
     op = str(payload.get("op", "")).strip()
     path = str(payload.get("path", "")).strip()
@@ -340,8 +386,12 @@ def api_structure() -> Any:
         return jsonify(error="op must be one of: " + ", ".join(sorted(allowed_ops))), 400
     if not path:
         return jsonify(error="path is required"), 400
-    before = cvweb.read_data_text()
-    data = cvweb.load_data()
+    store = _document_store()
+    try:
+        document, data = _master_data(store)
+    except (LookupError, ValueError) as exc:
+        return jsonify(error=str(exc)), 404
+    before = document.content_yaml
     try:
         if op == "insert":
             list_path = path
@@ -375,34 +425,53 @@ def api_structure() -> Any:
         return jsonify(error=str(exc)), 400
     after = cvweb.dump_data_text(data)
     if after != before:
-        _history().push_before_change(op, text=before)
-        cvweb.write_data_text(after)
-    return jsonify(ok=True, reload=True, **_history().status())
+        if document.id is None:
+            return jsonify(error="Master CV document id is required"), 500
+        store.push_before_change(document.id, op, before)
+        document = store.upsert_master(after)
+    return jsonify(ok=True, reload=True, **_history_status(store, document))
 
 
 @app.get("/api/history")
 def api_history() -> Any:
     """Return whether undo/redo are available."""
-    return jsonify(_history().status())
+    store = _document_store()
+    try:
+        document = _master_document(store)
+    except LookupError as exc:
+        return jsonify(error=str(exc)), 404
+    return jsonify(_history_status(store, document))
 
 
 @app.post("/api/undo")
 def api_undo() -> Any:
-    """Restore the previous data.yaml snapshot and reload the editor."""
+    """Restore the previous Master CV snapshot and reload the editor."""
+    store = _document_store()
     try:
-        result = _history().undo()
-    except ValueError as exc:
-        return jsonify(error=str(exc)), 400
+        document = _master_document(store)
+    except LookupError as exc:
+        return jsonify(error=str(exc)), 404
+    if document.id is None:
+        return jsonify(error="Master CV document id is required"), 500
+    if not store.history_status(document.id)["can_undo"]:
+        return jsonify(error="nothing to undo"), 400
+    result = store.undo(document.id)
     return jsonify(ok=True, reload=True, **result)
 
 
 @app.post("/api/redo")
 def api_redo() -> Any:
-    """Re-apply the most recently undone data.yaml snapshot."""
+    """Re-apply the most recently undone Master CV snapshot."""
+    store = _document_store()
     try:
-        result = _history().redo()
-    except ValueError as exc:
-        return jsonify(error=str(exc)), 400
+        document = _master_document(store)
+    except LookupError as exc:
+        return jsonify(error=str(exc)), 404
+    if document.id is None:
+        return jsonify(error="Master CV document id is required"), 500
+    if not store.history_status(document.id)["can_redo"]:
+        return jsonify(error="nothing to redo"), 400
+    result = store.redo(document.id)
     return jsonify(ok=True, reload=True, **result)
 
 
