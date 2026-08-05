@@ -4,7 +4,7 @@
 
 **Goal:** Make SQLite the source of truth for Master and variant CV documents, with a transitory history table and pins; write YAML/Markdown/PDF only on explicit export.
 
-**Amendment (Working Draft revision):** Prefer document `kind='working'` (treat `'master'` as a migrate synonym). Add `selections_json` on `cv_pins`. Product Tailor/Versions flows are planned in `2026-08-05-working-draft-cv-db.md` — do not ship filesystem Tailor→`data.yaml` apply alongside this.
+**Document kinds:** `master` | `variant` only (approved design). Do not introduce `kind='working'` or pin `selections_json` in this plan.
 
 **Architecture:** Extend `SnippetDatabase` with `cv_documents`, `cv_history`, and `cv_pins`. Add a `DocumentStore` class that owns document CRUD, undo/redo stacks, pins, and one-time bootstrap from files. Retarget editor, compose, import-master, and export through that store so live paths never treat `cv/web/data.yaml` as SoT.
 
