@@ -50,22 +50,16 @@
   display: none;
 }
 
-/* Preview overlay: a drawer over the main column only. The Studio left
-   nav (232px, or 70px under the shell's narrow breakpoint) stays clear. */
+/* Preview overlay: a drawer over the main column only. Positioned
+   absolute within `.master-workspace` (the scrolling main column, not
+   the viewport) rather than viewport-fixed with a hardcoded aside
+   width, so the Studio left nav stays fully usable at any viewport size
+   and the overlay never depends on the shell's own layout numbers. */
 #preview-pane {
   display: none;
-  position: fixed;
-  top: 86px;
-  left: 232px;
-  right: 0;
-  bottom: 0;
-  width: auto;
-  height: auto;
-  border: none;
-  border-left: 4px solid #1c1f24;
-  border-radius: 0;
+  position: absolute;
+  inset: 0;
   background: #525659;
-  box-shadow: -6px 0 18px rgba(0, 0, 0, 0.25);
   z-index: 500;
 }
 
@@ -73,18 +67,24 @@
   display: block;
 }
 
+/* The pane spans the full (possibly multi-page) document height so it
+   fully hides the editable CV underneath at any scroll position; the
+   iframe itself stays pinned to the visible viewport below the sticky
+   header while the user scrolls. */
 #preview-pane iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
+  position: sticky;
+  top: 86px;
   display: block;
+  width: 100%;
+  height: calc(100vh - 86px);
+  border: none;
 }
 
 #preview-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 1;
+  position: fixed;
+  top: 100px;
+  right: 24px;
+  z-index: 501;
   width: 34px;
   height: 34px;
   border: none;
@@ -98,10 +98,4 @@
 
 #preview-close:hover {
   background: rgba(0, 0, 0, 0.75);
-}
-
-@media (max-width: 900px) {
-  #preview-pane {
-    left: 70px;
-  }
 }
