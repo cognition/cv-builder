@@ -5,6 +5,31 @@
   const status = document.getElementById("editor-status");
   const pane = document.getElementById("preview-pane");
   const frame = document.getElementById("preview-frame");
+  const previewCloseBtn = document.getElementById("preview-close");
+
+  /**
+   * The overlay-scoped element that carries the "preview-open" layout
+   * class — the Studio shell's `.master-workspace` when present, or the
+   * `.cv-document` wrapper on the standalone/print-adjacent layout.
+   * @returns {?Element}
+   */
+  function previewScopeEl() {
+    return (
+      document.querySelector(".master-workspace") ||
+      document.querySelector(".cv-document")
+    );
+  }
+
+  /**
+   * Hide the PDF preview overlay and restore normal document layout.
+   */
+  function closePreview() {
+    document.body.classList.remove("preview-open");
+    pane.classList.remove("open");
+    pane.setAttribute("aria-hidden", "true");
+    const scope = previewScopeEl();
+    if (scope) scope.classList.remove("preview-open");
+  }
 
   /**
    * Update the editor status line.
@@ -58,6 +83,9 @@
       if (!exportResp.ok) throw new Error("export failed: " + (await exportResp.text()));
       document.body.classList.add("preview-open");
       pane.classList.add("open");
+      pane.setAttribute("aria-hidden", "false");
+      const scope = previewScopeEl();
+      if (scope) scope.classList.add("preview-open");
       frame.src = "/api/preview.pdf?t=" + Date.now();
       setStatus("Saved. Preview updated.");
       schedulePageGuides();
@@ -1382,6 +1410,7 @@
   }
 
   btn.addEventListener("click", saveAndPreview);
+  if (previewCloseBtn) previewCloseBtn.addEventListener("click", closePreview);
   injectStructureControls();
   enablePhotoPicker();
   setupPageGuides();

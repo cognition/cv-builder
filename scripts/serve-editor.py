@@ -63,6 +63,7 @@ from jinja2 import (
     FileSystemLoader as JinjaFSLoader,
     select_autoescape,
 )
+from markupsafe import Markup
 from ruamel.yaml import YAML
 
 app = Flask(__name__, static_folder=None)
@@ -203,8 +204,15 @@ def home_page() -> str:
 
 @app.get("/cv/web/edit")
 def edit_page() -> str:
-    """Serve the in-place CV editor page."""
-    return cvweb.render_html(edit_mode=True)
+    """Serve Master CV inside the Studio shell."""
+    body = cvweb.render_cv_body(edit_mode=True)
+    return _render_page(
+        "pages/master.html",
+        crumb="MASTER CV",
+        title="Edit your source CV",
+        active="master",
+        cv_body_html=Markup(body),
+    )
 
 
 @app.get("/cv/web/library")
