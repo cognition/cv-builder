@@ -3,7 +3,7 @@ person:
   last_name: Simpson
   tagline: "Nuclear Safety Inspector | Doughnut Enthusiast | Family Man"
   quote: "I am so smart! S-M-R-T… I mean S-M-A-R-T!"
-  photo: "../../assets/images/placeholder-headshot.png"
+  photo: "../../assets/images/homer-glasses.png"
   email: homer.simpson@springfield.example
   mobile: "555-0113"
   address:
@@ -35,9 +35,7 @@ skills:
 
 bio:
   - >-
-    Safety-minded professional with decades of experience keeping Sector 7G
-    mostly online. Known for clear communication under pressure, an open-door
-    (and open-fridge) policy, and an unmatched commitment to break-room morale.
+    Safety-minded professional with decades of experience keeping Sector 7G mostly online. Known for clear communication under pressure, an open-door (and open-fridge) policy, and an unmatched commitment to break-room morale.
 
 experience:
   - company: Springfield Nuclear Power Plant
