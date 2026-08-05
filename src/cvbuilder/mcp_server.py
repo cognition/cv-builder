@@ -2,7 +2,7 @@
 
 Lets an MCP client (Claude Desktop, Claude Code, etc.) search/edit the
 snippet library, match a job posting against it, and compose a tailored CV
-variant — the same operations the browser builder at ``/cv/web/build``
+variant — the same operations the browser builder at ``/build``
 performs, via ``cvbuilder`` directly rather than the Flask HTTP API.
 
 By default this runs over stdio (``python3 scripts/mcp-server.py``), for
@@ -25,6 +25,7 @@ from cvbuilder.composer import CvComposer
 from cvbuilder.database import SnippetDatabase
 from cvbuilder.document_store import DocumentStore
 from cvbuilder.importer import SnippetImporter
+from cvbuilder.library_ops import LibraryOps
 from cvbuilder.matcher import SnippetMatcher
 from cvbuilder.models import Snippet, SnippetVariant
 
@@ -41,11 +42,18 @@ mcp = FastMCP(
         "Tools for tailoring a CV. Snippets are reusable CV "
         "content units (category: bio/skill/experience/education/part/"
         "requirement, "
-        "each with brief/standard/detailed variants). Typical flow: "
-        "match_job_posting with the posting text to find relevant "
+        "each with brief/standard/detailed variants). Typical tailor "
+        "flow: match_job_posting with the posting text to find relevant "
         "snippets, list/inspect/create snippets to fill gaps, then "
         "compose_cv with an ordered list of {snippet_id, detail_level, "
-        "section} selections to store a tailored DB-backed variant."
+        "section} selections to store a tailored DB-backed variant. "
+        "Library populate/refine: (1) audit_library to find missing "
+        "detail levels, empty tags, outliers, and duplicate candidates; "
+        "(2) draft structured snippet items — the LLM rewrites content; "
+        "(3) upsert_snippets(..., dry_run=true) to preview, then "
+        "dry_run=false to apply; (4) delete_snippets for removals or "
+        "after splits/merges (dry_run defaults to true). "
+        "create_snippet / add_snippet_variant remain for single edits."
     ),
     # Only consulted for streamable-http/sse transport; harmless for stdio.
     host=MCP_HOST,
@@ -251,6 +259,60 @@ def delete_snippet_variant(snippet_id: int, detail_level: str) -> bool:
         detail_level: "brief", "standard", or "detailed".
     """
     return _database().delete_variant(snippet_id, detail_level)
+
+
+@mcp.tool()
+def audit_library(
+    category: Optional[str] = None,
+    tag: Optional[str] = None,
+    search: Optional[str] = None,
+) -> dict[str, Any]:
+    """Report Content library health gaps (missing levels, tags, outliers, dupes).
+
+    Use before populate/refine passes. Read-only.
+
+    Args:
+        category: Optional category filter.
+        tag: Optional tag filter.
+        search: Optional substring search filter.
+    """
+    return LibraryOps(_database()).audit(
+        category=category, tag=tag, search=search
+    )
+
+
+@mcp.tool()
+def upsert_snippets(
+    snippets: list[dict[str, Any]],
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Batch create or update snippets from structured items.
+
+    Each item: optional id (update), category, company, role, heading, tags,
+    and variants {brief|standard|detailed}. Defaults to dry_run=True — set
+    dry_run=False only after reviewing the plan.
+
+    Args:
+        snippets: List of snippet objects to create or update.
+        dry_run: When True (default), plan only without writing.
+    """
+    return LibraryOps(_database()).upsert_snippets(snippets, dry_run=dry_run)
+
+
+@mcp.tool()
+def delete_snippets(
+    snippet_ids: list[int],
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Batch delete snippets by id. Defaults to dry_run=True.
+
+    Args:
+        snippet_ids: Primary keys to delete.
+        dry_run: When True (default), plan only without deleting.
+    """
+    return LibraryOps(_database()).delete_snippets(
+        snippet_ids, dry_run=dry_run
+    )
 
 
 @mcp.tool()

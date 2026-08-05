@@ -30,8 +30,11 @@ rely on this for real. Nothing in this repo is anyone's real personal data.
 - `src/cvbuilder/` — SQLite-backed CV document store, snippet library,
   importer, matcher, composer, exporters, and the MCP server
 - `scripts/` — CLI entry points (see below)
-- `data/` — SQLite database (`snippets.db`, gitignored, regenerable);
-  explicit variant exports live under `cv/variants/`
+- `data/` — local (non-Docker) SQLite database (`snippets.db`, gitignored);
+  when `CV_DATA_ROOT` is set (Docker defaults to `/data`), the DB, uploads,
+  imports, and export artefacts live under that data root instead
+- Explicit variant export files default to `cv/variants/` locally, or
+  `$CV_DATA_ROOT/cv/variants/` in Docker
 
 ## Quickstart
 
@@ -42,7 +45,7 @@ pip install -r requirements.txt
 PYTHONPATH=src python3 scripts/seed-snippets.py
 
 # Run the editor / builder / variants UI
-python3 scripts/serve-editor.py        # http://127.0.0.1:5057/cv/web/edit
+python3 scripts/serve-editor.py        # http://127.0.0.1:5057/edit
 ```
 
 Requires `google-chrome` or `chromium` on PATH for PDF export
@@ -68,47 +71,63 @@ disk. Composing or editing a CV updates the database first and writes
 ### Editing in the browser
 
 `scripts/serve-editor.py` serves one app, sharing a common nav/header
-shell (`cv/web/src/shell/`) across every page below, including Master CV
-(`/cv/web/edit`):
+shell (`cv/web/src/shell/`) across every page below, including Working Draft
+(`/edit`):
 
-- **`/cv/web/`** — Home dashboard: live snippet/version counts and
+- **`/`** — Home dashboard: live snippet/version counts and
   recent versions.
-- **`/cv/web/edit`** ("Master CV") — click any text to edit it in place
+- **`/edit`** ("Working Draft") — click any text to edit it in place
   inside the shell; hover controls add/reorder/delete list items (bullets,
   skills, jobs, subsections, education, custom side panels); Save & Preview
-  stores the master CV in SQLite and can render a real PDF.
+  stores the Working Draft in SQLite and can render a real PDF.
   Adding a skill/bio paragraph/education entry opens a picker fed from
   the snippet database, with search and duplicate flagging.
-- **`/cv/web/build`** ("Tailor") — paste a job posting to re-rank
+- **`/build`** ("Tailor") — paste a job posting to re-rank
   snippets by keyword match, choose content, assemble an ordered draft,
   and compose it into a named SQLite variant; choose export options when
   you want YAML, Markdown, or PDF files under `cv/variants/<name>/`.
-- **`/cv/web/library`** ("Content library") — browse/search/filter every
+- **`/library`** ("Content library") — browse/search/filter every
   snippet, switch between its brief/standard/detailed variants, and
   create/edit/delete snippets or re-seed the database from source files.
-- **`/cv/web/variants`** ("Versions") — preview, re-render, export, or
+- **`/variants`** ("Versions") — preview, re-render, export, or
   delete composed variant documents.
-- **`/cv/web/assets`** — browse/upload photos and logos (backed by the
+- **`/assets`** — browse/upload photos and logos (backed by the
   `/api/images*` endpoints) and reference the built-in contact icons.
-- **`/cv/web/connect`** ("Connect AI") — MCP setup instructions and an
+- **`/connect`** ("Connect AI") — MCP setup instructions and an
   optional local connectivity check.
 
 ### Docker
 
-Runs the editor/builder UI and the MCP server in one container, with the
-repo bind-mounted so edits land on the host:
+Runs the editor/builder UI and the MCP server in one container. Mutable
+user content is stored on a named volume at `/data` (`cv_data`), so the
+database, uploaded images, resume imports, and optional variant/PDF
+exports survive image rebuilds. The repo is still bind-mounted at `/app`
+for local code edits — omit that mount for image-only runs.
 
 ```
 docker compose up --build
-# home:     http://127.0.0.1:5057/cv/web/
-# editor:   http://127.0.0.1:5057/cv/web/edit
-# tailor:   http://127.0.0.1:5057/cv/web/build
-# library:  http://127.0.0.1:5057/cv/web/library
-# variants: http://127.0.0.1:5057/cv/web/variants
-# assets:   http://127.0.0.1:5057/cv/web/assets
-# connect:  http://127.0.0.1:5057/cv/web/connect
+# home:     http://127.0.0.1:5057/
+# editor:   http://127.0.0.1:5057/edit
+# tailor:   http://127.0.0.1:5057/build
+# library:  http://127.0.0.1:5057/library
+# variants: http://127.0.0.1:5057/variants
+# assets:   http://127.0.0.1:5057/assets
+# connect:  http://127.0.0.1:5057/connect
 # MCP:      http://127.0.0.1:8765/mcp  (streamable-http)
 ```
+
+Volume layout (`CV_DATA_ROOT=/data`):
+
+```
+/data/snippets.db
+/data/assets/images/     # uploaded photos and logos
+/data/imports/           # resume uploads
+/data/cv/variants/       # optional YAML/PDF exports
+/data/cv/current/        # disposable preview artefacts
+```
+
+To use a host directory instead of the named volume, replace the
+`cv_data:/data` mount with e.g. `./persistent-data:/data`.
 
 Both ports publish to `127.0.0.1` only. Set `ENABLE_MCP=0` in the compose
 `environment` block to run the web UI without the MCP server.
@@ -119,8 +138,12 @@ Both ports publish to `127.0.0.1` only. Set `ENABLE_MCP=0` in the compose
 the snippet library and composer as [MCP](https://modelcontextprotocol.io)
 tools: `list_snippets`, `get_snippet`, `create_snippet`, `update_snippet`,
 `add_snippet_variant`, `delete_snippet`, `delete_snippet_variant`,
+`audit_library`, `upsert_snippets` (batch create/update; `dry_run` defaults
+to true), `delete_snippets` (batch delete; `dry_run` defaults to true),
 `match_job_posting`, `compose_cv`, `list_variants`, `list_drafts`,
-`get_draft`, `save_draft`, `delete_draft`, `reseed_snippets`.
+`get_draft`, `save_draft`, `delete_draft`, `reseed_snippets`. Use
+`audit_library` then dry-run `upsert_snippets` / `delete_snippets` to
+populate or refine the Content library.
 
 **Local subprocess (stdio)** — the client spawns the server itself:
 
