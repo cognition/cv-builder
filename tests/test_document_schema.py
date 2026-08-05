@@ -24,3 +24,14 @@ class TestDocumentSchema:
         assert "cv_documents" in names
         assert "cv_history" in names
         assert "cv_pins" in names
+
+    def test_cv_pins_has_selections_json(self, tmp_path: Path) -> None:
+        """cv_pins must include selections_json after ensure_schema."""
+        database = SnippetDatabase(tmp_path / "snippets.db")
+        database.ensure_schema()
+        with database.connect() as connection:
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(cv_pins)")
+            }
+        assert "selections_json" in columns

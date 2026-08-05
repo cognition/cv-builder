@@ -1,0 +1,478 @@
+"""Database-backed CV document storage with history and pins."""
+
+from __future__ import annotations
+
+import json
+import logging
+import sqlite3
+from typing import Any, Optional
+
+from cvbuilder.database import SnippetDatabase
+from cvbuilder.models import CvDocument, CvHistoryState, CvPin
+
+LOGGER = logging.getLogger(__name__)
+
+
+class DocumentStore:
+    """Database-backed CV documents with transitory undo history and pins."""
+
+    MAX_HISTORY = 50
+
+    def __init__(self, database: SnippetDatabase) -> None:
+        """Initialise the document store.
+
+        Args:
+            database: SQLite database wrapper with the CV document schema.
+        """
+        self.database = database
+
+    def get_working(self) -> Optional[CvDocument]:
+        """Return the working CV document (``working`` or legacy ``master``)."""
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM cv_documents
+                WHERE kind IN ('working', 'master')
+                ORDER BY CASE kind WHEN 'working' THEN 0 ELSE 1 END, id ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            return self._row_to_document(row) if row else None
+
+    def get_master(self) -> Optional[CvDocument]:
+        """Return the working CV document (alias for :meth:`get_working`)."""
+        return self.get_working()
+
+    def get_variant(self, name: str) -> Optional[CvDocument]:
+        """Return the named variant CV document, if one exists."""
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM cv_documents
+                WHERE kind = 'variant' AND name = ?
+                """,
+                (name,),
+            ).fetchone()
+            return self._row_to_document(row) if row else None
+
+    def list_variants(self) -> list[CvDocument]:
+        """Return all variant CV documents ordered by name."""
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM cv_documents
+                WHERE kind = 'variant'
+                ORDER BY name ASC
+                """
+            ).fetchall()
+            return [self._row_to_document(row) for row in rows]
+
+    def upsert_working(self, content_yaml: str) -> CvDocument:
+        """Create or update the single working CV document.
+
+        Migrates a legacy ``kind='master'`` row to ``working`` on save.
+        """
+        with self.database.connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT id FROM cv_documents
+                WHERE kind IN ('working', 'master')
+                ORDER BY CASE kind WHEN 'working' THEN 0 ELSE 1 END, id ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            if existing:
+                document_id = int(existing["id"])
+                connection.execute(
+                    """
+                    UPDATE cv_documents
+                    SET kind = 'working',
+                        content_yaml = ?,
+                        name = NULL,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    (content_yaml, document_id),
+                )
+            else:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO cv_documents
+                        (kind, name, content_yaml, updated_at)
+                    VALUES ('working', NULL, ?, datetime('now'))
+                    """,
+                    (content_yaml,),
+                )
+                document_id = int(cursor.lastrowid)
+            return self._require_document(connection, document_id)
+
+    def upsert_master(self, content_yaml: str) -> CvDocument:
+        """Create or update the working CV document (alias)."""
+        return self.upsert_working(content_yaml)
+
+    def upsert_variant(self, name: str, content_yaml: str) -> CvDocument:
+        """Create or update a named variant CV document."""
+        clean_name = name.strip()
+        if not clean_name:
+            raise ValueError("variant name is required")
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO cv_documents (kind, name, content_yaml, updated_at)
+                VALUES ('variant', ?, ?, datetime('now'))
+                ON CONFLICT(name) WHERE kind = 'variant' DO UPDATE SET
+                    content_yaml = excluded.content_yaml,
+                    updated_at = datetime('now')
+                """,
+                (clean_name, content_yaml),
+            )
+            row = connection.execute(
+                """
+                SELECT * FROM cv_documents
+                WHERE kind = 'variant' AND name = ?
+                """,
+                (clean_name,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"CV variant {clean_name!r} was not saved")
+            return self._row_to_document(row)
+
+    def delete_variant(self, name: str) -> None:
+        """Delete a named variant CV document."""
+        with self.database.connect() as connection:
+            cursor = connection.execute(
+                """
+                DELETE FROM cv_documents
+                WHERE kind = 'variant' AND name = ?
+                """,
+                (name,),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(f"CV variant {name!r} was not found")
+
+    def history_status(self, document_id: int) -> dict[str, Any]:
+        """Return counts and availability for a document's undo/redo history."""
+        with self.database.connect() as connection:
+            self._require_document(connection, document_id)
+            history = self._load_history(connection, document_id)
+        return self._history_status(history)
+
+    def push_before_change(self, document_id: int, label: str, text: str) -> None:
+        """Push a pre-change text snapshot onto the undo stack."""
+        with self.database.connect() as connection:
+            self._require_document(connection, document_id)
+            history = self._load_history(connection, document_id)
+            history.undo.append({"label": label, "text": text})
+            history.undo = history.undo[-self.MAX_HISTORY :]
+            history.redo = []
+            self._save_history(connection, history)
+
+    def undo(self, document_id: int) -> dict[str, Any]:
+        """Restore the latest undo entry and move current content to redo."""
+        with self.database.connect() as connection:
+            document = self._require_document(connection, document_id)
+            history = self._load_history(connection, document_id)
+            if not history.undo:
+                return self._history_status(history)
+            entry = history.undo.pop()
+            history.redo.append(
+                {"label": entry.get("label", "redo"), "text": document.content_yaml}
+            )
+            history.redo = history.redo[-self.MAX_HISTORY :]
+            self._update_document_content(connection, document_id, entry["text"])
+            self._save_history(connection, history)
+            return self._history_status(history)
+
+    def redo(self, document_id: int) -> dict[str, Any]:
+        """Restore the latest redo entry and move current content to undo."""
+        with self.database.connect() as connection:
+            document = self._require_document(connection, document_id)
+            history = self._load_history(connection, document_id)
+            if not history.redo:
+                return self._history_status(history)
+            entry = history.redo.pop()
+            history.undo.append(
+                {"label": entry.get("label", "undo"), "text": document.content_yaml}
+            )
+            history.undo = history.undo[-self.MAX_HISTORY :]
+            self._update_document_content(connection, document_id, entry["text"])
+            self._save_history(connection, history)
+            return self._history_status(history)
+
+    def create_pin(
+        self,
+        document_id: int,
+        label: str,
+        *,
+        selections: Optional[list[dict[str, Any]]] = None,
+    ) -> CvPin:
+        """Create a named snapshot of a document and its history stacks."""
+        clean_label = label.strip()
+        if not clean_label:
+            raise ValueError("pin label is required")
+        with self.database.connect() as connection:
+            document = self._require_document(connection, document_id)
+            history = self._load_history(connection, document_id)
+            return self._insert_pin(
+                connection,
+                document_id=document_id,
+                label=clean_label,
+                content_yaml=document.content_yaml,
+                undo=history.undo,
+                redo=history.redo,
+                selections=list(selections or []),
+            )
+
+    def list_pins(self, document_id: int) -> list[CvPin]:
+        """Return pins for a document, newest first."""
+        with self.database.connect() as connection:
+            self._require_document(connection, document_id)
+            rows = connection.execute(
+                """
+                SELECT * FROM cv_pins
+                WHERE document_id = ?
+                ORDER BY created_at DESC, id DESC
+                """,
+                (document_id,),
+            ).fetchall()
+            return [self._row_to_pin(row) for row in rows]
+
+    def restore_pin(self, pin_id: int) -> CvPin:
+        """Restore pinned content and history, after pinning current state."""
+        with self.database.connect() as connection:
+            pin = self._require_pin(connection, pin_id)
+            document = self._require_document(connection, pin.document_id)
+            history = self._load_history(connection, pin.document_id)
+            self._insert_pin(
+                connection,
+                document_id=pin.document_id,
+                label=f"before-restore:{pin_id}",
+                content_yaml=document.content_yaml,
+                undo=history.undo,
+                redo=history.redo,
+                selections=[],
+            )
+            self._update_document_content(connection, pin.document_id, pin.content_yaml)
+            self._save_history(
+                connection,
+                CvHistoryState(
+                    document_id=pin.document_id,
+                    undo=pin.undo[-self.MAX_HISTORY :],
+                    redo=pin.redo[-self.MAX_HISTORY :],
+                ),
+            )
+            return pin
+
+    def delete_pin(self, pin_id: int) -> None:
+        """Delete a saved pin."""
+        with self.database.connect() as connection:
+            cursor = connection.execute("DELETE FROM cv_pins WHERE id = ?", (pin_id,))
+            if cursor.rowcount == 0:
+                raise KeyError(f"CV pin {pin_id} was not found")
+
+    def _insert_pin(
+        self,
+        connection: sqlite3.Connection,
+        document_id: int,
+        label: str,
+        content_yaml: str,
+        undo: list[dict[str, str]],
+        redo: list[dict[str, str]],
+        selections: Optional[list[dict[str, Any]]] = None,
+    ) -> CvPin:
+        """Insert and return a pin snapshot."""
+        cursor = connection.execute(
+            """
+            INSERT INTO cv_pins
+                (
+                    document_id,
+                    label,
+                    content_yaml,
+                    undo_json,
+                    redo_json,
+                    selections_json,
+                    created_at
+                )
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (
+                document_id,
+                label,
+                content_yaml,
+                json.dumps(undo[-self.MAX_HISTORY :]),
+                json.dumps(redo[-self.MAX_HISTORY :]),
+                json.dumps(list(selections or [])),
+            ),
+        )
+        return self._require_pin(connection, int(cursor.lastrowid))
+
+    def _load_history(
+        self, connection: sqlite3.Connection, document_id: int
+    ) -> CvHistoryState:
+        """Load history for a document, returning empty stacks when absent."""
+        row = connection.execute(
+            """
+            SELECT * FROM cv_history
+            WHERE document_id = ?
+            """,
+            (document_id,),
+        ).fetchone()
+        if row is None:
+            return CvHistoryState(document_id=document_id, undo=[], redo=[])
+        return CvHistoryState(
+            document_id=document_id,
+            undo=self._parse_stack(row["undo_json"], document_id),
+            redo=self._parse_stack(row["redo_json"], document_id),
+            updated_at=str(row["updated_at"]) if row["updated_at"] else None,
+        )
+
+    def _save_history(
+        self, connection: sqlite3.Connection, history: CvHistoryState
+    ) -> None:
+        """Persist a document's history stacks."""
+        connection.execute(
+            """
+            INSERT INTO cv_history
+                (document_id, undo_json, redo_json, updated_at)
+            VALUES (?, ?, ?, datetime('now'))
+            ON CONFLICT(document_id) DO UPDATE SET
+                undo_json = excluded.undo_json,
+                redo_json = excluded.redo_json,
+                updated_at = datetime('now')
+            """,
+            (
+                history.document_id,
+                json.dumps(history.undo[-self.MAX_HISTORY :]),
+                json.dumps(history.redo[-self.MAX_HISTORY :]),
+            ),
+        )
+
+    def _update_document_content(
+        self, connection: sqlite3.Connection, document_id: int, content_yaml: str
+    ) -> None:
+        """Update document content by id."""
+        cursor = connection.execute(
+            """
+            UPDATE cv_documents
+            SET content_yaml = ?, updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (content_yaml, document_id),
+        )
+        if cursor.rowcount == 0:
+            raise KeyError(f"CV document {document_id} was not found")
+
+    @staticmethod
+    def _history_status(history: CvHistoryState) -> dict[str, Any]:
+        """Return public history status fields for a history state."""
+        undo_count = len(history.undo)
+        redo_count = len(history.redo)
+        return {
+            "can_undo": undo_count > 0,
+            "can_redo": redo_count > 0,
+            "undo_count": undo_count,
+            "redo_count": redo_count,
+        }
+
+    @staticmethod
+    def _parse_stack(raw_value: object, document_id: int) -> list[dict[str, str]]:
+        """Parse a history stack JSON payload into label/text dictionaries."""
+        try:
+            parsed = json.loads(str(raw_value or "[]"))
+        except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+            LOGGER.warning(
+                "Corrupt CV history for document %s; resetting stack", document_id
+            )
+            return []
+        if not isinstance(parsed, list):
+            LOGGER.warning(
+                "Corrupt CV history for document %s; resetting stack", document_id
+            )
+            return []
+        stack: list[dict[str, str]] = []
+        for item in parsed:
+            if isinstance(item, dict) and "text" in item:
+                stack.append(
+                    {
+                        "label": str(item.get("label", "")),
+                        "text": str(item["text"]),
+                    }
+                )
+        return stack
+
+    @staticmethod
+    def _parse_selections(raw_value: object, pin_id: int) -> list[dict[str, Any]]:
+        """Parse Tailor selections JSON from a pin row."""
+        try:
+            parsed = json.loads(str(raw_value or "[]"))
+        except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+            LOGGER.warning("Corrupt pin selections for pin %s; resetting", pin_id)
+            return []
+        if not isinstance(parsed, list):
+            LOGGER.warning("Corrupt pin selections for pin %s; resetting", pin_id)
+            return []
+        return [item for item in parsed if isinstance(item, dict)]
+
+    @staticmethod
+    def _row_to_document(row: sqlite3.Row) -> CvDocument:
+        """Convert a cv_documents row into a CvDocument model."""
+        return CvDocument(
+            id=int(row["id"]),
+            kind=str(row["kind"]),
+            name=str(row["name"]) if row["name"] is not None else None,
+            content_yaml=str(row["content_yaml"]),
+            updated_at=str(row["updated_at"]) if row["updated_at"] else None,
+        )
+
+    @staticmethod
+    def _row_to_pin(row: sqlite3.Row) -> CvPin:
+        """Convert a cv_pins row into a CvPin model."""
+        document_id = int(row["document_id"])
+        pin_id = int(row["id"])
+        selections_raw = "[]"
+        try:
+            selections_raw = row["selections_json"]
+        except (KeyError, IndexError):
+            selections_raw = "[]"
+        return CvPin(
+            id=pin_id,
+            document_id=document_id,
+            label=str(row["label"]),
+            content_yaml=str(row["content_yaml"]),
+            undo=DocumentStore._parse_stack(row["undo_json"], document_id),
+            redo=DocumentStore._parse_stack(row["redo_json"], document_id),
+            selections=DocumentStore._parse_selections(selections_raw, pin_id),
+            created_at=str(row["created_at"]) if row["created_at"] else None,
+        )
+
+    def _require_document(
+        self, connection: sqlite3.Connection, document_id: Optional[int]
+    ) -> CvDocument:
+        """Return a document by id or raise KeyError."""
+        if document_id is None:
+            raise ValueError("document id is required")
+        row = connection.execute(
+            """
+            SELECT * FROM cv_documents
+            WHERE id = ?
+            """,
+            (document_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"CV document {document_id} was not found")
+        return self._row_to_document(row)
+
+    def _require_pin(self, connection: sqlite3.Connection, pin_id: Optional[int]) -> CvPin:
+        """Return a pin by id or raise KeyError."""
+        if pin_id is None:
+            raise ValueError("pin id is required")
+        row = connection.execute(
+            """
+            SELECT * FROM cv_pins
+            WHERE id = ?
+            """,
+            (pin_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"CV pin {pin_id} was not found")
+        return self._row_to_pin(row)

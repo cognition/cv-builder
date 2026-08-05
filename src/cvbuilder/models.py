@@ -205,9 +205,9 @@ class ResumeImport:
 
 @dataclass
 class CvDocument:
-    """A master or variant CV document stored as YAML content."""
+    """A working or variant CV document stored as YAML content."""
 
-    kind: str  # "master" | "variant"
+    kind: str  # "working" | "master" | "variant"
     content_yaml: str
     name: Optional[str] = None
     id: Optional[int] = None
@@ -252,6 +252,7 @@ class CvPin:
     content_yaml: str
     undo: list[dict[str, str]]
     redo: list[dict[str, str]]
+    selections: list[dict[str, Any]] = field(default_factory=list)
     id: Optional[int] = None
     created_at: Optional[str] = None
 
@@ -264,5 +265,6 @@ class CvPin:
             "content_yaml": self.content_yaml,
             "undo": list(self.undo),
             "redo": list(self.redo),
+            "selections": list(self.selections),
             "created_at": self.created_at,
         }
