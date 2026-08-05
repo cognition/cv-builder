@@ -23,7 +23,7 @@ VIEW_TITLES = {
 
 NAV_LABELS = {
     "home": "Home",
-    "master": "Master CV",
+    "master": "Working Draft",
     "personal-details": "Personal details",
     "resume-import": "Import resume",
     "tailor": "Tailor",

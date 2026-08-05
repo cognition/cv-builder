@@ -42,11 +42,31 @@
     statusEl.textContent = message;
   }
 
-  function showToast(message) {
+  function showToast(message, durationMs) {
     toast.textContent = message;
     toast.classList.add("show");
     clearTimeout(showToast._t);
-    showToast._t = setTimeout(() => toast.classList.remove("show"), 2100);
+    showToast._t = setTimeout(
+      () => toast.classList.remove("show"),
+      durationMs || 2100
+    );
+  }
+
+  /**
+   * Drop draft rows whose snippet id is no longer in the library.
+   * @returns {number} How many rows were removed.
+   */
+  function pruneStaleDraftItems() {
+    const known = new Set(snippets.map((item) => item.id));
+    const before = draft.length;
+    draft = draft.filter((item) => known.has(item.snippet_id));
+    const removed = before - draft.length;
+    if (removed) {
+      autosaveLocal();
+      renderDraft();
+      renderSuggestions();
+    }
+    return removed;
   }
 
   function escapeHtml(value) {
@@ -116,8 +136,15 @@
     const resp = await fetch("/api/snippets?" + params.toString());
     if (!resp.ok) throw new Error("failed to load snippets: " + (await resp.text()));
     snippets = await resp.json();
+    const pruned = pruneStaleDraftItems();
     renderSuggestions();
-    setStatus(`Loaded ${snippets.length} snippets.`);
+    if (pruned) {
+      setStatus(
+        `Loaded ${snippets.length} snippets. Removed ${pruned} stale draft item(s).`
+      );
+    } else {
+      setStatus(`Loaded ${snippets.length} snippets.`);
+    }
   }
 
   async function loadDraftOptions() {
@@ -280,6 +307,14 @@
       setStatus("Add at least one snippet to the draft.");
       return;
     }
+    pruneStaleDraftItems();
+    if (!draft.length) {
+      const message =
+        "Every selected snippet is missing from the library (stale ids). Re-add content, then try again.";
+      setStatus(message);
+      showToast(message, 4500);
+      return;
+    }
     const pinLabel = variantName.value.trim();
     const draftName = pinLabel || draftSelect.value || "working-draft";
     btnCompose.disabled = true;
@@ -301,23 +336,48 @@
       });
       const body = await resp.json();
       if (!resp.ok) throw new Error(body.error || "apply failed");
-      await fetch("/api/export", {
+      const skipped = (body.apply && body.apply.skipped) || [];
+      if (skipped.length) {
+        const skippedIds = new Set(skipped.map((item) => item.snippet_id));
+        draft = draft.filter((item) => !skippedIds.has(item.snippet_id));
+        autosaveLocal();
+        renderDraft();
+        renderSuggestions();
+      }
+      const exportResp = await fetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ format: "pdf", document: "master" }),
       });
-      previewPane.classList.add("open");
-      previewFrame.src = "/api/preview.pdf?t=" + Date.now();
+      if (!exportResp.ok) {
+        const exportBody = await exportResp.json().catch(() => ({}));
+        throw new Error(exportBody.error || "preview export failed");
+      }
+      const previewUrl = "/api/preview.pdf?t=" + Date.now();
+      if (window.CvPreviewPane) {
+        window.CvPreviewPane.open(previewUrl);
+      } else {
+        previewPane.classList.add("open");
+        previewFrame.src = previewUrl;
+      }
       await loadDraftOptions();
       draftSelect.value = draftName;
       const pinNote =
         body.apply && body.apply.pin
           ? ` Pin “${body.apply.pin.label}” saved.`
           : "";
-      showToast(`Working Draft CV updated.${pinNote}`);
-      setStatus("Ready.");
+      const skipNote = skipped.length
+        ? ` Skipped ${skipped.length} missing snippet(s).`
+        : "";
+      showToast(`Working Draft CV updated.${pinNote}${skipNote}`, 4500);
+      setStatus(
+        skipped.length
+          ? `Updated Working Draft. Open Working Draft to review.${skipNote}`
+          : "Ready. Open Working Draft to review."
+      );
     } catch (err) {
       setStatus("Error: " + err.message);
+      showToast("Could not update Working Draft: " + err.message, 5000);
     } finally {
       btnCompose.disabled = false;
     }
@@ -513,4 +573,5 @@
   postingText.dispatchEvent(new Event("input"));
   loadDraftOptions().catch((err) => setStatus("Error: " + err.message));
   loadSnippets().catch((err) => setStatus("Error: " + err.message));
+  if (window.CvPreviewPane) window.CvPreviewPane.init();
 })();

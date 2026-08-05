@@ -19,11 +19,14 @@
     statusEl.textContent = message;
   }
 
-  function showToast(message) {
+  function showToast(message, durationMs) {
     toast.textContent = message;
     toast.classList.add("show");
     clearTimeout(showToast._t);
-    showToast._t = setTimeout(() => toast.classList.remove("show"), 2100);
+    showToast._t = setTimeout(
+      () => toast.classList.remove("show"),
+      durationMs || 2100
+    );
   }
 
   function escapeHtml(value) {
@@ -264,9 +267,13 @@
     const body = await resp.json();
     if (!resp.ok) throw new Error(body.error || "failed to add to Working Draft");
     if (body.added_count > 0) {
-      showToast(
-        `Added to Working Draft (${detailLevel}). Open Working Draft CV to review.`
-      );
+      if (body.warning) {
+        showToast(body.warning, 4500);
+      } else {
+        showToast(
+          `Added to Working Draft (${detailLevel}). Open Working Draft CV to review.`
+        );
+      }
     } else {
       showToast("Already in Working Draft — skipped duplicate.");
     }

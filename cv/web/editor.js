@@ -5,7 +5,6 @@
   const status = document.getElementById("editor-status");
   const pane = document.getElementById("preview-pane");
   const frame = document.getElementById("preview-frame");
-  const previewCloseBtn = document.getElementById("preview-close");
 
   /**
    * The overlay-scoped element that carries the "preview-open" layout
@@ -24,13 +23,32 @@
    * Hide the PDF preview overlay and restore normal document layout.
    */
   function closePreview() {
-    document.body.classList.remove("preview-open");
-    pane.classList.remove("open");
-    pane.setAttribute("aria-hidden", "true");
+    if (window.CvPreviewPane && typeof window.CvPreviewPane.close === "function") {
+      window.CvPreviewPane.close();
+      return;
+    }
+    document.body.classList.remove("preview-open", "preview-expanded");
+    if (pane) {
+      pane.classList.remove("open", "expanded");
+      pane.setAttribute("aria-hidden", "true");
+    }
     const scope = previewScopeEl();
     if (scope) scope.classList.remove("preview-open");
   }
 
+  /**
+   * Shared-chrome callback used after Close / Escape.
+   * @returns {void}
+   */
+  function onSharedPreviewClose() {
+    document.body.classList.remove("preview-open");
+    const scope = previewScopeEl();
+    if (scope) scope.classList.remove("preview-open");
+  }
+
+  if (window.CvPreviewPane) {
+    window.CvPreviewPane.init({ onClose: onSharedPreviewClose });
+  }
   /**
    * Update the editor status line.
    * @param {string} msg
@@ -82,11 +100,16 @@
       const exportResp = await fetch("/api/export", { method: "POST" });
       if (!exportResp.ok) throw new Error("export failed: " + (await exportResp.text()));
       document.body.classList.add("preview-open");
-      pane.classList.add("open");
-      pane.setAttribute("aria-hidden", "false");
       const scope = previewScopeEl();
       if (scope) scope.classList.add("preview-open");
-      frame.src = "/api/preview.pdf?t=" + Date.now();
+      const previewUrl = "/api/preview.pdf?t=" + Date.now();
+      if (window.CvPreviewPane) {
+        window.CvPreviewPane.open(previewUrl);
+      } else {
+        pane.classList.add("open");
+        pane.setAttribute("aria-hidden", "false");
+        frame.src = previewUrl;
+      }
       setStatus("Saved. Preview updated.");
       schedulePageGuides();
     } catch (err) {
@@ -1403,16 +1426,130 @@
     const links = document.createElement("span");
     links.className = "editor-links";
     links.innerHTML =
-      '<a href="/cv/web/">Home</a> · <a href="/cv/web/build">Tailor</a> · ' +
-      '<a href="/cv/web/library">Library</a> · <a href="/cv/web/variants">Versions</a> · ' +
-      '<a href="/cv/web/docs">How to use</a>';
+      '<a href="/">Home</a> · <a href="/build">Tailor</a> · ' +
+      '<a href="/library">Library</a> · <a href="/variants">Versions</a> · ' +
+      '<a href="/docs">How to use</a>';
     toolbar.appendChild(links);
   }
 
+  /**
+   * Load pending detail-level conflicts and paint red/blue glows plus banner.
+   */
+  function setupConflictHighlights() {
+    const banner = document.getElementById("conflict-banner");
+    if (!banner) return;
+
+    /**
+     * @param {string} value
+     * @returns {string}
+     */
+    function normaliseText(value) {
+      return String(value || "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    /**
+     * @param {Array<{mark:string,needle:string}>} conflicts
+     */
+    function clearConflictPaint() {
+      document
+        .querySelectorAll("[data-path].conflict-existing, [data-path].conflict-new")
+        .forEach((node) => {
+          node.classList.remove("conflict-existing", "conflict-new");
+        });
+    }
+
+    /**
+     * @param {Array<{mark:string,needle:string}>} conflicts
+     */
+    function paintConflicts(conflicts) {
+      clearConflictPaint();
+      const needles = (conflicts || [])
+        .map((item) => ({
+          mark: item.mark === "new" ? "new" : "existing",
+          needle: normaliseText(item.needle),
+        }))
+        .filter((item) => item.needle);
+      if (!needles.length) return;
+      document.querySelectorAll("[data-path]").forEach((node) => {
+        const text = normaliseText(node.textContent);
+        if (!text) return;
+        for (let i = 0; i < needles.length; i += 1) {
+          const item = needles[i];
+          if (
+            text === item.needle ||
+            item.needle.indexOf(text) !== -1 ||
+            text.indexOf(item.needle) !== -1
+          ) {
+            node.classList.add(
+              item.mark === "new" ? "conflict-new" : "conflict-existing"
+            );
+            break;
+          }
+        }
+      });
+    }
+
+    /**
+     * @param {Array<{mark:string,needle:string}>} conflicts
+     */
+    function showBanner(conflicts) {
+      const hasConflicts = Array.isArray(conflicts) && conflicts.length > 0;
+      banner.hidden = !hasConflicts;
+      if (hasConflicts) paintConflicts(conflicts);
+      else clearConflictPaint();
+    }
+
+    async function loadConflicts() {
+      const resp = await fetch("/api/working-draft/conflicts");
+      if (!resp.ok) return;
+      const body = await resp.json();
+      showBanner(body.conflicts || []);
+    }
+
+    banner.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest("[data-conflict-action]");
+      if (!button) return;
+      const action = button.getAttribute("data-conflict-action");
+      if (!action) return;
+      banner.querySelectorAll("button").forEach((node) => {
+        node.disabled = true;
+      });
+      fetch("/api/working-draft/conflicts/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      })
+        .then(async (resp) => {
+          const body = await resp.json();
+          if (!resp.ok) throw new Error(body.error || "resolve failed");
+          if (action === "keep_both") {
+            showBanner([]);
+            setStatus("Kept both detail levels.");
+            return;
+          }
+          window.location.reload();
+        })
+        .catch((err) => {
+          setStatus("Error: " + err.message);
+          banner.querySelectorAll("button").forEach((node) => {
+            node.disabled = false;
+          });
+        });
+    });
+
+    loadConflicts().catch(() => {
+      /* Conflicts are optional chrome; ignore load failures. */
+    });
+  }
+
   btn.addEventListener("click", saveAndPreview);
-  if (previewCloseBtn) previewCloseBtn.addEventListener("click", closePreview);
   injectStructureControls();
   enablePhotoPicker();
   setupPageGuides();
   setupHistoryControls();
+  setupConflictHighlights();
 })();

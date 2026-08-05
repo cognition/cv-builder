@@ -242,11 +242,37 @@ def _export_path(
 
 
 def _relative_export_path(path: Path) -> str:
-    """Return a repo-relative path for JSON responses when possible."""
+    """Return a URL-friendly path for JSON responses when possible."""
+    variant_url = _variant_file_url(path, require_exists=False)
+    if variant_url is not None:
+        return variant_url
     try:
         return path.relative_to(cvweb.REPO_ROOT).as_posix()
     except ValueError:
         return str(path)
+
+
+def _variant_file_url(
+    path: Path, *, require_exists: bool = True
+) -> Optional[str]:
+    """Return a ``cv/variants/...`` URL path for a file under VARIANTS_DIR.
+
+    Args:
+        path: Absolute or relative filesystem path to a variant export.
+        require_exists: When True, return None unless the file exists.
+
+    Returns:
+        A browser path suitable for ``/<path>`` (served from VARIANTS_DIR),
+        or None when the path is outside the variants directory.
+    """
+    resolved = path.resolve()
+    if require_exists and not resolved.is_file():
+        return None
+    try:
+        relative = resolved.relative_to(VARIANTS_DIR.resolve()).as_posix()
+    except ValueError:
+        return None
+    return f"cv/variants/{relative}"
 
 
 def _cleanup_partial_export(path: Path) -> None:
@@ -259,19 +285,19 @@ def _cleanup_partial_export(path: Path) -> None:
 
 
 def _master_unavailable_html(exc: Exception) -> str:
-    """Render a Studio shell page when the Master CV is missing or invalid."""
+    """Render a Studio shell page when the Working Draft is missing or invalid."""
     template = _APP_ENV.from_string(
         '{% extends "shell/base.html" %}'
-        '{% block title %}CV Studio — Master CV unavailable{% endblock %}'
+        '{% block title %}CV Studio — Working Draft unavailable{% endblock %}'
         '{% block content %}'
-        '<div class="empty-state"><h2>Master CV unavailable</h2>'
+        '<div class="empty-state"><h2>Working Draft unavailable</h2>'
         "<p>{{ message }}</p></div>"
         "{% endblock %}"
     )
     return template.render(
         message=str(exc),
-        crumb="MASTER CV",
-        title="Master CV unavailable",
+        crumb="WORKING DRAFT",
+        title="Working Draft unavailable",
         active="master",
     )
 
@@ -364,7 +390,7 @@ def home_page() -> str:
 
 @app.get("/edit")
 def edit_page() -> Any:
-    """Serve Master CV inside the Studio shell."""
+    """Serve Working Draft CV inside the Studio shell."""
     store = _document_store()
     try:
         _, data = _master_data(store)
@@ -373,8 +399,8 @@ def edit_page() -> Any:
     body = cvweb.render_cv_body(data=data, edit_mode=True)
     return _render_page(
         "pages/master.html",
-        crumb="MASTER CV",
-        title="Edit your source CV",
+        crumb="WORKING DRAFT",
+        title="Edit your Working Draft CV",
         active="master",
         cv_body_html=Markup(body),
     )
@@ -901,6 +927,56 @@ def api_working_draft_add_snippets() -> Any:
             selections, history_label="library-add"
         )
     except (ValueError, KeyError) as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(result)
+
+
+@app.get("/api/working-draft/conflicts")
+def api_working_draft_conflicts() -> Any:
+    """Return pending detail-level conflict highlights for the Working Draft."""
+    store = _document_store()
+    working = store.get_working()
+    if working is None or working.id is None:
+        return jsonify(error="working draft document is missing"), 404
+    highlights = store.list_conflict_highlights(working.id)
+    return jsonify(
+        {
+            "document_id": working.id,
+            "conflicts": [item.to_dict() for item in highlights],
+        }
+    )
+
+
+@app.post("/api/working-draft/conflicts/resolve")
+def api_working_draft_conflicts_resolve() -> Any:
+    """Resolve Working Draft conflict highlights (keep both / existing / new)."""
+    payload = request.get_json(force=True) or {}
+    action = payload.get("action")
+    database = _database()
+    store = _document_store()
+    applier = WorkingDraftApplier(database, store, cvweb.REPO_ROOT)
+    try:
+        result = applier.resolve_conflicts(str(action or ""))
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(result)
+
+
+@app.post("/api/working-draft/load-variant")
+def api_working_draft_load_variant() -> Any:
+    """Replace Working Draft content sections from an application-ready CV."""
+    payload = request.get_json(force=True) or {}
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return jsonify(error="name is required"), 400
+    database = _database()
+    store = _document_store()
+    applier = WorkingDraftApplier(database, store, cvweb.REPO_ROOT)
+    try:
+        result = applier.load_variant(name)
+    except KeyError as exc:
+        return jsonify(error=str(exc)), 404
+    except ValueError as exc:
         return jsonify(error=str(exc)), 400
     return jsonify(result)
 
@@ -1488,16 +1564,8 @@ def _list_variants() -> list[dict[str, Any]]:
         variants.append(
             {
                 "name": document.name,
-                "data_yaml": (
-                    str(data_yaml.relative_to(cvweb.REPO_ROOT))
-                    if data_yaml.is_file()
-                    else None
-                ),
-                "pdf": (
-                    str(pdf_path.relative_to(cvweb.REPO_ROOT))
-                    if pdf_path.is_file()
-                    else None
-                ),
+                "data_yaml": _variant_file_url(data_yaml),
+                "pdf": _variant_file_url(pdf_path),
                 "updated_at": document.updated_at,
             }
         )
@@ -1554,8 +1622,14 @@ def api_render_variant(name: str) -> Any:
         return jsonify(error=str(exc)), 500
     return jsonify(
         ok=True,
-        pdf=str(pdf_path.relative_to(cvweb.REPO_ROOT)),
+        pdf=_variant_file_url(pdf_path) or _relative_export_path(pdf_path),
     )
+
+
+@app.get("/cv/variants/<path:filename>")
+def serve_variant_export(filename: str) -> Any:
+    """Serve composed variant export files from the data volume."""
+    return send_from_directory(VARIANTS_DIR, filename)
 
 
 @app.get("/cv/web/")

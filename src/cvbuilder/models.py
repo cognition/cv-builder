@@ -266,3 +266,28 @@ class CvPin:
             "redo": list(self.redo),
             "created_at": self.created_at,
         }
+
+
+@dataclass
+class CvConflictHighlight:
+    """A temporary Working Draft highlight for detail-level conflicts."""
+
+    document_id: int
+    mark: str  # "existing" | "new"
+    needle: str
+    snippet_id: Optional[int] = None
+    detail_level: Optional[str] = None
+    id: Optional[int] = None
+    created_at: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable representation."""
+        return {
+            "id": self.id,
+            "document_id": self.document_id,
+            "mark": self.mark,
+            "needle": self.needle,
+            "snippet_id": self.snippet_id,
+            "detail_level": self.detail_level,
+            "created_at": self.created_at,
+        }

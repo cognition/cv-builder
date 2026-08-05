@@ -125,6 +125,20 @@ CREATE TABLE IF NOT EXISTS cv_pins (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cv_pins_document ON cv_pins(document_id);
+
+CREATE TABLE IF NOT EXISTS cv_conflict_highlights (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    mark TEXT NOT NULL,
+    needle TEXT NOT NULL,
+    snippet_id INTEGER,
+    detail_level TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(document_id) REFERENCES cv_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_cv_conflict_highlights_document
+    ON cv_conflict_highlights(document_id);
 """
 
 
