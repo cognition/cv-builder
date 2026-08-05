@@ -116,6 +116,44 @@ class TestParseResume:
             "education": 0,
         }
 
+    def test_selected_experience_after_skills_is_not_lost(self) -> None:
+        """PDF layouts often emit Technical Skills before Selected Experience."""
+        text = """
+Ramon Brooker
+DevOps Evangelist
+
+Technical Skills
+Kubernetes, Terraform, Python
+
+Business Founder / Entrepreneur
+AEO3 Ltd.
+Founder | December 2023 - Present | Ottawa, Ontario
+- Defined company goals and strategic direction
+
+Selected Experience
+Accenture
+Application Development Manager | May 2020 Oct 2022 | Ottawa, Ontario
+- Led mixed teams from across the globe
+
+Imagine Communications Canada, Ltd
+Senior Software Engineer, R&D | Aug 2014 May 2020 | Waterloo, Ontario
+- Designed and deployed Playout Platforms
+
+Training and Education
+BSc Something, Some University
+""".strip()
+        resume = parse_resume(text)
+        assert resume.experience, "expected experience entries to be detected"
+        assert len(resume.experience) >= 2
+        joined = " ".join(
+            f"{entry.heading} {entry.role} {entry.company}"
+            for entry in resume.experience
+        )
+        assert "Accenture" in joined or "Application Development Manager" in joined
+        assert "Imagine" in joined or "Senior Software Engineer" in joined
+        assert "Kubernetes" in resume.skills or "Python" in resume.skills
+        assert resume.education, "Training and Education should map to education"
+
 
 class TestBuildCandidates:
     """Flattening a ParsedResume into snippet-shaped candidate dicts."""

@@ -32,19 +32,30 @@ _EXPERIENCE_HEADINGS = {
     "professional experience",
     "work history",
     "career history",
+    "selected experience",
+    "relevant experience",
+    "professional history",
+    "career",
+    "positions held",
 }
 _SKILLS_HEADINGS = {
     "skills",
     "technical skills",
+    "functional skills",
     "core competencies",
     "competencies",
     "key skills",
+    "technologies",
+    "tools",
 }
 _EDUCATION_HEADINGS = {
     "education",
     "education and certifications",
+    "education and training",
+    "training and education",
     "academic background",
     "qualifications",
+    "certifications",
 }
 _ALL_HEADINGS = (
     _SUMMARY_HEADINGS | _EXPERIENCE_HEADINGS | _SKILLS_HEADINGS | _EDUCATION_HEADINGS
@@ -55,7 +66,26 @@ _HEADER_SPLIT_RE = re.compile(r"\s+(?:at|@)\s+|\s*[|—–]\s*|\s+-\s+|,\s+")
 _TRAILING_DATE_RE = re.compile(
     r"\s*[\(\[]?\b(19|20)\d{2}\b.*$|\s*\((?:present|current)\)\s*$", re.IGNORECASE
 )
-_HEADING_MAX_LEN = 40
+_MONTH = (
+    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+    r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|"
+    r"nov(?:ember)?|dec(?:ember)?)"
+)
+_JOB_LINE_RE = re.compile(
+    rf"""
+    (?:
+        {_MONTH}\s+\d{{4}}
+        |
+        \b(?:19|20)\d{{2}}\s*[-–—]\s*(?:(?:19|20)\d{{2}}|present|current)\b
+        |
+        \|\s*{_MONTH}
+        |
+        \|\s*(?:19|20)\d{{2}}
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+_HEADING_MAX_LEN = 60
 
 
 @dataclass
@@ -191,10 +221,9 @@ def parse_resume(text: str) -> ParsedResume:
 
 def _classify_heading(line: str) -> str | None:
     """Return the section name a heading-like line belongs to, if any."""
-    stripped = line.strip().strip(":").strip()
-    if not stripped or len(stripped) > _HEADING_MAX_LEN:
+    key = _normalise_heading_key(line)
+    if not key or len(key) > _HEADING_MAX_LEN:
         return None
-    key = stripped.lower()
     if key in _SUMMARY_HEADINGS:
         return "profile"
     if key in _EXPERIENCE_HEADINGS:
@@ -206,6 +235,25 @@ def _classify_heading(line: str) -> str | None:
     return None
 
 
+def _normalise_heading_key(line: str) -> str:
+    """Normalise a possible heading line for vocabulary lookup."""
+    key = line.strip().strip(":").strip().lower()
+    key = re.sub(r"\s+continued\s*$", "", key).strip()
+    return re.sub(r"\s+", " ", key)
+
+
+def _looks_like_job_header(line: str) -> bool:
+    """True when a line looks like a role with employment dates."""
+    stripped = line.strip()
+    if not stripped or len(stripped) > 140:
+        return False
+    if _BULLET_RE.match(stripped):
+        return False
+    if _classify_heading(stripped) is not None:
+        return False
+    return _JOB_LINE_RE.search(stripped) is not None
+
+
 def _split_into_sections(text: str) -> list[tuple[str, str]]:
     """Walk the document line by line, grouping text under each heading."""
     sections: list[tuple[str, list[str]]] = [("profile", [])]
@@ -214,6 +262,10 @@ def _split_into_sections(text: str) -> list[tuple[str, str]]:
         if heading is not None:
             sections.append((heading, []))
             continue
+        if _looks_like_job_header(raw_line) and sections[-1][0] != "experience":
+            # PDF text often dumps skills first; a dated role line re-opens
+            # experience even when the Experience heading was missed or late.
+            sections.append(("experience", []))
         sections[-1][1].append(raw_line)
     return [(name, "\n".join(lines)) for name, lines in sections]
 
@@ -235,9 +287,17 @@ def _parse_skills(body: str) -> list[str]:
         line = _strip_bullet(line.strip())
         if not line:
             continue
+        # Skip paragraph-length lines — common when PDF order mis-buckets
+        # experience bullets under a Technical Skills heading.
+        if len(line) > 100 and line.count(" ") >= 8:
+            continue
         if "," in line or "·" in line or "|" in line:
             parts = re.split(r"[,·|]", line)
-            skills.extend(part.strip() for part in parts if part.strip())
+            skills.extend(
+                part.strip()
+                for part in parts
+                if part.strip() and not _looks_like_job_header(part)
+            )
         else:
             skills.append(line)
     seen: set[str] = set()
@@ -262,17 +322,37 @@ def _parse_experience(body: str) -> list[ParsedExperience]:
 
     Each block's first line is treated as the role/company header; the
     remaining lines become bullets (bullet markers stripped if present).
+    When a company line precedes a dated role line, both are used.
     """
     entries: list[ParsedExperience] = []
     for block in re.split(r"\n\s*\n", body):
         lines = [line.strip() for line in block.splitlines() if line.strip()]
         if not lines:
             continue
-        header = lines[0]
-        bullets = [_strip_bullet(line) for line in lines[1:]]
+        role_idx = next(
+            (index for index, line in enumerate(lines) if _looks_like_job_header(line)),
+            0,
+        )
+        header = lines[role_idx]
+        company_hint = ""
+        if role_idx > 0:
+            company_hint = lines[role_idx - 1]
+        bullets = [_strip_bullet(line) for line in lines[role_idx + 1 :]]
+        # Keep nearby non-bullet context lines that precede the role as
+        # extra heading context when they are not the company line.
         role, company = _split_header(header)
+        if not company and company_hint and not _BULLET_RE.match(company_hint):
+            company = company_hint
+        heading = header
+        if company and company.lower() not in heading.lower():
+            heading = f"{role or header} — {company}"
         entries.append(
-            ParsedExperience(heading=header, role=role, company=company, bullets=bullets)
+            ParsedExperience(
+                heading=heading,
+                role=role or header,
+                company=company,
+                bullets=bullets,
+            )
         )
     return entries
 
