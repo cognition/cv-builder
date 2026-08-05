@@ -369,6 +369,42 @@ class TestApiEndpoints:
         assert "From DB" in out.read_text(encoding="utf-8")
         assert api_app["data_file"].read_text(encoding="utf-8") == before_file
 
+    def test_export_yaml_write_failure_removes_partial_target(
+        self,
+        api_app: dict[str, Any],
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A failed export should not leave a corrupt partial target behind."""
+        out = tmp_path / "partial.yaml"
+        original_write_text = Path.write_text
+
+        def failing_write_text(
+            path: Path,
+            data: str,
+            encoding: str | None = None,
+            errors: str | None = None,
+            newline: str | None = None,
+        ) -> int:
+            """Write a partial file at the target path, then fail."""
+            if path == out:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"partial export")
+                raise OSError("simulated write failure")
+            return original_write_text(
+                path, data, encoding=encoding, errors=errors, newline=newline
+            )
+
+        monkeypatch.setattr(Path, "write_text", failing_write_text)
+
+        response = api_app["client"].post(
+            "/api/export",
+            json={"format": "yaml", "path": str(out)},
+        )
+
+        assert response.status_code == 500
+        assert out.exists() is False
+
     def test_export_markdown_writes_variant_by_name(
         self, api_app: dict[str, Any], tmp_path: Path
     ) -> None:

@@ -1,4 +1,4 @@
-"""Compose selected snippet variants into a CV data.yaml and PDF."""
+"""Compose selected snippet variants into DB-backed CV documents."""
 
 from __future__ import annotations
 

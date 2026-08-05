@@ -240,6 +240,15 @@ def _relative_export_path(path: Path) -> str:
         return str(path)
 
 
+def _cleanup_partial_export(path: Path) -> None:
+    """Remove an export target that may have been partially written."""
+    if path.exists():
+        try:
+            path.unlink()
+        except OSError:
+            return
+
+
 def _master_unavailable_html(exc: Exception) -> str:
     """Render a Studio shell page when the Master CV is missing or invalid."""
     template = _APP_ENV.from_string(
@@ -673,6 +682,7 @@ def api_export() -> Any:
         else:
             cvweb.export_pdf(out_path, data=data)
     except (OSError, RuntimeError, SystemExit) as exc:
+        _cleanup_partial_export(out_path)
         return jsonify(error=str(exc)), 500
 
     return jsonify(

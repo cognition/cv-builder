@@ -290,6 +290,7 @@
     try {
       const payload = {
         name: name,
+        render_pdf: true,
         selections: draft.map((item) => ({
           snippet_id: item.snippet_id,
           detail_level: item.detail_level,
@@ -307,7 +308,7 @@
         previewPane.classList.add("open");
         previewFrame.src = "/" + body.pdf + "?t=" + Date.now();
       }
-      showToast(`Saved ${body.data_yaml}${body.pdf ? ` and ${body.pdf}` : ""}.`);
+      showToast(body.pdf ? `Saved version and previewed ${body.pdf}.` : "Saved version.");
       setStatus("Ready.");
     } catch (err) {
       setStatus("Error: " + err.message);
