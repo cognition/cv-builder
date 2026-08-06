@@ -14,6 +14,7 @@ from cvbuilder.document_store import DocumentStore
 
 if TYPE_CHECKING:
     from _pytest.logging import LogCaptureFixture
+    from _pytest.monkeypatch import MonkeyPatch
 
 
 def _store(tmp_path: Path) -> DocumentStore:
@@ -242,3 +243,18 @@ class TestBootstrap:
         assert result["history"] == 1
         assert store.history_status(master.id)["undo_count"] == 1
         assert store.history_status(master.id)["redo_count"] == 1
+
+    def test_bootstrap_skipped_when_env_set(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SKIP_FS_BOOTSTRAP=1 leaves the store empty even if YAML exists."""
+        monkeypatch.setenv("SKIP_FS_BOOTSTRAP", "1")
+        repo = tmp_path / "repo"
+        (repo / "cv" / "web").mkdir(parents=True)
+        (repo / "cv" / "web" / "data.yaml").write_text(
+            "bio:\n  - master\n", encoding="utf-8"
+        )
+        store = _store(tmp_path)
+        result = store.bootstrap_from_filesystem(repo)
+        assert result == {"master": 0, "variants": 0, "history": 0}
+        assert store.get_working() is None

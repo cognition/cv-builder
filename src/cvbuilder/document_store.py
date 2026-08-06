@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any, Optional
@@ -38,6 +39,8 @@ class DocumentStore:
         Returns counts: ``{"master": 0|1, "variants": N, "history": 0|1}``.
         No-ops when a master document already exists.
         """
+        if os.environ.get("SKIP_FS_BOOTSTRAP") == "1":
+            return {"master": 0, "variants": 0, "history": 0}
         if self.get_master() is not None:
             return {"master": 0, "variants": 0, "history": 0}
 
