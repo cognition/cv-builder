@@ -109,9 +109,10 @@ for local code edits — omit that mount for image-only runs.
 
 First boot of an empty volume creates a blank SQLite database (schema only,
 no master CV) unless you set `DEMO=1` in the compose `environment` block.
-With `DEMO=1`, the container seeds the synthetic Homer Simpson snippets and
-allows bootstrapping the master CV from `cv/web/data.yaml`. Existing
-volumes are never wiped when `DEMO` changes.
+Blank Docker installs stay blank across restarts because non-demo starts
+skip filesystem bootstrap. With `DEMO=1`, the container seeds the synthetic
+Homer Simpson snippets and allows bootstrapping the master CV from
+`cv/web/data.yaml`. Existing volumes are never wiped when `DEMO` changes.
 
 ```
 docker compose up --build
