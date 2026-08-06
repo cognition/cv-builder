@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -46,3 +47,24 @@ class FirstBoot:
             "snippet_total": sum(stats.values()),
             "stats": stats,
         }
+
+
+class FirstBootCli:
+    """Command-line adapter for Docker first-boot database preparation."""
+
+    @staticmethod
+    def run() -> int:
+        """Prepare the database using environment-driven container settings."""
+        db_path = Path(os.environ["SNIPPETS_DB"])
+        repo_root = Path(os.environ.get("REPO_ROOT", "/app"))
+        demo = os.environ.get("DEMO") == "1"
+        result = FirstBoot.prepare_database(db_path, repo_root, demo=demo)
+        if demo:
+            print(f"Seeded {result['snippet_total']} demo snippets into {db_path}")
+            return 0
+        print(f"Created blank database at {db_path}")
+        return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(FirstBootCli.run())
