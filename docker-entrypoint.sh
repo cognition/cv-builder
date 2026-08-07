@@ -2,14 +2,26 @@
 # Seed the snippet database when missing, start the MCP server in the
 # background (set ENABLE_MCP=0 to skip it), then run the given command
 # (the web editor) in the foreground. SIGTERM/SIGINT stop both together.
+# DEMO=1 seeds the Homer demo on first boot; otherwise blank schema and
+# SKIP_FS_BOOTSTRAP=1 every start so restarts stay blank.
 set -eu
 
 DB_PATH="${SNIPPETS_DB:-/app/data/snippets.db}"
+export SNIPPETS_DB="${DB_PATH}"
+export REPO_ROOT="${REPO_ROOT:-/app}"
+
+if [ "${DEMO:-}" != "1" ]; then
+  export SKIP_FS_BOOTSTRAP=1
+fi
 
 if [ ! -f "$DB_PATH" ]; then
-  echo "No snippet database at ${DB_PATH}; seeding from data.yaml and content/…"
   mkdir -p "$(dirname "$DB_PATH")"
-  python3 -m cvbuilder.importer
+  if [ "${DEMO:-}" = "1" ]; then
+    echo "No snippet database at ${DB_PATH}; DEMO=1 — seeding Homer demo from data.yaml and content/…"
+  else
+    echo "No snippet database at ${DB_PATH}; DEMO unset — creating blank schema (no Homer demo)…"
+  fi
+  python3 -m cvbuilder.first_boot
 fi
 
 MCP_PID=""

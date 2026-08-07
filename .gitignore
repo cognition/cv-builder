@@ -34,3 +34,6 @@ __pycache__/
 
 # Behave / Cucumber local run dumps
 *.output
+
+# Superpowers SDD scratch (local only)
+.superpowers/

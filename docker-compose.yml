@@ -14,6 +14,10 @@ services:
       MCP_PORT: "8765"
       PYTHONPATH: "/app/src:/app/scripts"
       CHROME_BIN: "/usr/bin/chromium"
+      # Set DEMO to "1" for Homer Simpson sample snippets + master CV
+      # on first boot. Blank by default; stays blank across restarts
+      # unless DEMO=1 (seeds + allows filesystem bootstrap).
+      # DEMO: "1"
     # Bind-mount keeps data.yaml, generated PDFs, and snippets.db on the host.
     # Both ports publish to 127.0.0.1 only — same reasoning as the editor:
     # fine for local personal use, don't widen without adding auth first.

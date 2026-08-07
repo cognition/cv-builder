@@ -6,9 +6,11 @@ HTML/CSS resume, a SQLite-backed document and snippet library for assembling
 role-tailored variants, and an MCP server so an LLM can help do the same
 thing from a chat client instead of the browser.
 
-Ships with a fully synthetic example person (Homer Simpson) in
-`cv/web/data.yaml` and `content/` — replace it with your own before you
-rely on this for real. Nothing in this repo is anyone's real personal data.
+Includes a fully synthetic example person (Homer Simpson) in
+`cv/web/data.yaml` and `content/` for local seeding and optional Docker
+demo mode (`DEMO=1`). Docker first boot is blank unless `DEMO=1`. Replace
+the sample with your own before you rely on this for real. Nothing in this
+repo is anyone's real personal data.
 
 ## Layout
 
@@ -56,7 +58,8 @@ Requires `google-chrome` or `chromium` on PATH for PDF export
 Master and variant CV documents live in SQLite (`cv_documents`), which is
 the source of truth for live browser edits, composed variants, imports, and
 exports. On first run, if the database has no master CV row, the app
-bootstraps that row from the shipped `cv/web/data.yaml`; after that,
+bootstraps that row from the shipped `cv/web/data.yaml` unless
+`SKIP_FS_BOOTSTRAP=1` (blank Docker first boot); after that,
 `data.yaml` is just an input or explicit export target, not the live store.
 
 Undo and redo state is transitory and stored in `cv_history`. Pins preserve
@@ -103,6 +106,14 @@ user content is stored on a named volume at `/data` (`cv_data`), so the
 database, uploaded images, resume imports, and optional variant/PDF
 exports survive image rebuilds. The repo is still bind-mounted at `/app`
 for local code edits — omit that mount for image-only runs.
+
+First boot creates a blank SQLite database (schema only, no master CV)
+unless you set `DEMO=1` in the compose `environment` block. Blank Docker
+installs stay blank across restarts because non-demo starts skip
+filesystem bootstrap. With `DEMO=1`, the container seeds the synthetic
+Homer Simpson snippets and allows bootstrapping the master CV from
+`cv/web/data.yaml`. Existing databases are never wiped when `DEMO`
+changes.
 
 ```
 docker compose up --build
